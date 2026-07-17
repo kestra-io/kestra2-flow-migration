@@ -1,0 +1,46 @@
+id: datagen-mongodb
+namespace: company.team
+description: Generate mock JSON data and load it into a MongoDB collection.
+
+tasks:
+  - id: datagen
+    type: io.kestra.plugin.datagen.core.Generate
+    batchSize: 100
+    store: true
+    generator:
+      type: io.kestra.plugin.datagen.generators.JsonObjectGenerator
+      locale: ["us", "US"]
+      value:
+        name: "#{name.fullName}"
+        email: "#{internet.emailAddress}"
+        age: 30
+        address:
+          city: "#{address.city}"
+          zip: "#{address.zipCode}"
+        skills: [ "#{job.keySkills}", "#{job.position}", "hardcoded" ]
+        ts: "{{ now() }}"
+
+  - id: send_to_mongodb
+    type: io.kestra.plugin.mongodb.Load
+    connection:
+      uri: "{{ secret('MONGO_URI') }}"
+    database: "{{ secret('DATABASE_NAME') }}"
+    collection: "{{ secret('COLLECTION_NAME') }}"
+    from: "{{ outputs.datagen.uri }}"
+
+# extend:
+#   shortDescription: "Generate 100 fake people records with DataGen, store them as a JSON file, and bulk-load that file into a MongoDB collection using secrets for connection."
+#   title: Generate mock JSON data and send the file to MongoDB
+#   metaTitle: Generate mock JSON data and send the file to MongoDB
+#   description: |
+#     Generate 100 fake people records with DataGen, store them as a JSON file, and bulk-load that file into a MongoDB collection using secrets for connection details.
+# 
+#     Quick start:
+#       1. Set secrets `MONGO_URI`, `DATABASE_NAME`, and `COLLECTION_NAME`.
+#       2. Run the flow; it will create the JSON file and load all records into MongoDB.
+#       3. Inspect the collection to verify the inserted documents.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: "This flow generates 100 records of mock people data in JSON with DataGen and loads it into a MongoDB collection."

@@ -1,0 +1,40 @@
+id: react-to-sqs-trigger
+namespace: company.team
+
+tasks:
+  - id: print_message
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    commands:
+      - cat "{{ trigger.uri }}"
+
+triggers:
+  - id: sqs
+    type: io.kestra.plugin.aws.sqs.Trigger
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+    region: "{{ secret('AWS_DEFAULT_REGION') }}"
+    queueUrl: https://sqs.eu-central-1.amazonaws.com/123456789/kestra
+    maxRecords: 1
+
+# extend:
+#   shortDescription: "This flow reacts to an SQS trigger. Any time there is a new message in the queue, the flow is triggered. The queue URL points to an already existing queue."
+#   title: React to an SQS trigger
+#   metaTitle: React to an SQS trigger
+#   description: |
+#     This flow reacts to an SQS trigger. Any time there is a new message in the
+#     queue, the flow is triggered.
+# 
+#     The queue URL points to an already existing queue. The `{{ trigger.uri }}`
+#     points to a file in Kestra's internal storage containing the content of the
+#     SQS message. You can read the contents of that file in any task.
+# 
+#     This flow assumes AWS credentials stored as secrets `AWS_ACCESS_KEY_ID`,
+#     `AWS_SECRET_ACCESS_KEY` and `AWS_DEFAULT_REGION`.
+#   tags:
+#     - Cloud
+#   ee: false
+#   demo: false
+#   metaDescription: This flow reacts to an SQS trigger. Any time there is a new
+#     message in the queue, the flow is triggered.

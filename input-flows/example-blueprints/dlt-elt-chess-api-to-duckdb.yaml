@@ -1,0 +1,61 @@
+id: dlt-elt-chess-api-to-duckdb
+namespace: company.team
+
+tasks:
+  - id: chess_api_to_duckdb
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:slim
+    dependencies:
+      - dlt[duckdb]
+      - requests
+    script: |
+      import dlt
+      import requests
+
+      pipeline = dlt.pipeline(
+          pipeline_name='chess_pipeline',
+          destination='duckdb',
+          dataset_name='player_data'
+      )
+      data = []
+      for player in ['magnuscarlsen', 'rpragchess']:
+          response = requests.get(f'https://api.chess.com/pub/player/{player}')
+          response.raise_for_status()
+          data.append(response.json())
+      # Extract, normalize, and load the data
+      pipeline.run(data, table_name='player')
+
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    disabled: true
+    cron: "0 9 * * *"
+
+# extend:
+#   shortDescription: "Build a lightweight ELT pipeline in Python that pulls player profiles from the Chess.com REST API and loads them into DuckDB using dltHub (dlt) \u2014 ideal for."
+#   title: "Run a scheduled ELT pipeline in Python: extract Chess.com API data and load it into DuckDB with dltHub"
+#   metaTitle: Run a Python ELT Pipeline
+#   description: |
+#     Build a lightweight **ELT pipeline** in Python that pulls player profiles from the Chess.com REST API and loads them into **DuckDB** using **dltHub (dlt)** — ideal for scheduled ingestion, prototyping, and local analytics.
+# 
+#     **What this automation does:**
+#     - Extracts JSON data from the Chess.com public API for a list of players.
+#     - Uses `dlt.pipeline()` to normalize the JSON into a relational table (`player`) automatically.
+#     - Loads the result into a DuckDB destination dataset (`player_data`) for fast SQL querying and local development.
+# 
+#     **Why dlt + DuckDB works well here:**
+#     - dlt handles schema inference and normalization, so you don’t have to hand-write transformations for nested JSON.
+#     - DuckDB keeps everything portable (single file / local execution), making it perfect for demos, tests, and analyst workflows.
+# 
+#     **Scheduling:**
+#     - A daily schedule trigger is included (09:00), but disabled by default so you can enable it when you’re ready.
+# 
+#     **Tip:**
+#     - To ingest more players, extend the list in the Python script or replace it with an input-driven list for dynamic ingestion.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Run a Python ELT pipeline with dlt and Kestra. Extract Chess.com API data on schedule and load it into DuckDB for automated analysis.

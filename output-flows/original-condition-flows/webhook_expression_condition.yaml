@@ -1,0 +1,13 @@
+id: webhook_expression_condition
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Webhook received with matching body!
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: 4wjtkzwVGBM9yKnjm3yv8r
+    when: "{{ trigger.body.hello == 'world' }}"

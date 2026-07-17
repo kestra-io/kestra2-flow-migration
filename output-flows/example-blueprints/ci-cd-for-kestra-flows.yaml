@@ -1,0 +1,59 @@
+id: ci-cd-for-kestra-flows
+namespace: company.team
+
+tasks:
+  - id: deploy
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: cloneRepository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/anna-geller/kestra-ci-cd
+        branch: main
+
+      - id: validate_flows
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.core.runner.Process
+        commands:
+          - /app/kestra flow validate flows/
+
+      - id: deploy_flows
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.core.runner.Process
+        commands:
+          - /app/kestra flow namespace update prod flows/prod/ --no-delete
+          - /app/kestra flow namespace update prod.marketing
+            flows/prod.marketing/ --no-delete
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to build a CI/CD pipeline for Kestra workflows, enabling teams to manage, validate, and deploy flows directly from GitHub using."
+#   title: CI/CD for Kestra, Deploy and Manage Flows from GitHub Using Webhooks
+#   metaTitle: "CI/CD for Kestra: Validate and Deploy Flows"
+#   description: |
+#     This blueprint demonstrates how to build a **CI/CD pipeline for Kestra
+#     workflows**, enabling teams to manage, validate, and deploy flows directly
+#     from **GitHub** using a **webhook-driven GitOps pattern**.
+# 
+#     This flow:
+# 
+#     - Implements a self-managed CI/CD pipeline where **Kestra deploys Kestra
+#       flows**, eliminating the need for external CI tools.
+#     - Clones a GitHub repository containing Kestra flows, validates them, and
+#       deploys them automatically to one or more target namespaces.
+#     - Uses a [webhook trigger](https://kestra.io/docs/how-to-guides/webhooks) to
+#       react to GitHub push events and deploy changes in near real time.
+#     - Enforces flow validation before deployment to ensure correctness and
+#       prevent configuration errors.
+# 
+#     To learn more about this CI/CD and GitOps pattern, check the following
+#     [documentation page](https://kestra.io/docs/developer-guide/cicd#deploy-flows-from-a-flow)
+#     and [blog
+#     post](https://levelup.gitconnected.com/when-github-actions-get-painful-to-troubleshoot-try-this-instead-9a134c9e9baf).
+#   tags:
+#     - Infrastructure
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Build a CI/CD pipeline for Kestra workflows using GitHub webhooks. Validate
+#     and deploy Kestra flows automatically with a GitOps-style approach.

@@ -1,0 +1,47 @@
+id: discord-alert
+namespace: company.team
+
+tasks:
+  - id: send_discord_message
+    type: io.kestra.plugin.discord.DiscordExecution
+    url: "{{ secret('DISCORD_WEBHOOK') }}"
+    username: Rick Astley
+    embedList:
+      - title: Kestra Flow Notification
+        color:
+          - 255
+          - 255
+          - 255
+    executionId: "{{ trigger.executionId }}"
+
+triggers:
+  - id: failed_prod_workflows
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ trigger.namespace startsWith 'company.analytics' }}"
+        states:
+          - FAILED
+          - WARNING
+
+# extend:
+#   shortDescription: "This flow implements a namespace-level monitoring for all workflows in the namespace company.analytics."
+#   title: Send a Discord message when a production workflow fails
+#   metaTitle: Send a Discord message when a production workflow
+#   description: |
+#     This flow implements a namespace-level monitoring for all workflows in the
+#     namespace `company.analytics`. Whenever an execution in that namespace
+#     fails, this flow will automatically send a message to a Discord channel.
+#     This means that you don't need any boilerplate code to implement alerting
+#     logic. You only need to implement that once and thanks to the Flow trigger,
+#     Kestra will make sure that all executions matching the conditions will
+#     receive notifications.
+# 
+#     To use this flow, you need to create a Discord webhook and store it as a
+#     Secret. Follow this [guide on
+#     Discord](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+#     to create a webhook.
+#   tags:
+#     - Business
+#   ee: false
+#   demo: false
+#   metaDescription: Monitor all workflows in a Kestra namespace and send Discord alerts on failure. A namespace-level observability pattern for production workflow monitoring.

@@ -1,0 +1,21 @@
+id: bad_example
+namespace: company.monitoring
+description: This example will not work
+
+tasks:
+  - id: send
+    type: io.kestra.plugin.slack.notifications.SlackExecution
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    channel: "#general"
+    executionId: "{{trigger.executionId}}"
+
+triggers:
+  - id: listen
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - flowId: cleanup
+        namespace: company.system
+        when: "{{ trigger.namespace startsWith 'company.product' }}"
+        states:
+          - FAILED
+          - WARNING

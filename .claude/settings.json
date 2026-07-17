@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go run:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(./kestra-migrate:*)",
+      "Bash(/usr/bin/diff:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(comm:*)",
+      "Bash(shuf:*)",
+      "Bash(cut:*)",
+      "Bash(tr:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(grep:*)",
+      "Bash(cat -A:*)",
+      "Bash(while read:*)",
+      "Bash(rm -rf output-flows*)",
+      "Read(//tmp/**)"
+    ]
+  }
+}

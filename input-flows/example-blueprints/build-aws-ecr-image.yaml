@@ -1,0 +1,56 @@
+id: build-aws-ecr-image
+namespace: company.team
+
+tasks:
+  - id: fetch_auth_token
+    type: io.kestra.plugin.aws.ecr.GetAuthToken
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+    region: "{{ secret('AWS_DEFAULT_REGION') }}"
+
+  - id: build
+    type: io.kestra.plugin.docker.Build
+    dockerfile: |
+      FROM python:3.10
+      RUN pip install --upgrade pip
+      RUN pip install --no-cache-dir kestra requests "polars[all]"
+    tags:
+      - 123456789.dkr.ecr.eu-central-1.amazonaws.com/data-infastructure:latest
+    push: true
+    credentials:
+      username: AWS
+      password: "{{ outputs.fetch_auth_token.token }}"
+
+# extend:
+#   shortDescription: "This workflow implements a Continuous Integration (CI) pipeline that automatically builds a Docker image and pushes it to AWS Elastic Container Registry (ECR)."
+#   title: AWS ECR CI/CD Build and Push Docker Images to AWS Elastic Container Registry
+#   metaTitle: Build and Push Docker Images to AWS ECR with CI/CD
+#   description: |
+#     This workflow implements a **Continuous Integration (CI) pipeline** that
+#     automatically builds a Docker image and pushes it to **AWS Elastic Container
+#     Registry (ECR)** using secure, token-based authentication.
+# 
+#     It demonstrates how to:
+# 
+#     1. Build Docker images from an inline Dockerfile or a file-based Dockerfile
+#        as part of a cloud-native CI/CD workflow.
+#     2. Authenticate to AWS ECR using a short-lived authorization token generated
+#        by the AWS ECR API.
+#     3. Properly tag container images with the correct AWS region and ECR
+#        repository URL.
+#     4. Push Docker images automatically to ECR for downstream deployment on
+#        ECS, EKS, or Kubernetes.
+#     5. Securely manage AWS credentials using Kestra secrets and environment
+#        variables.
+# 
+#     This flow is ideal for **CI/CD pipelines**, **data platforms**, and
+#     **cloud infrastructure teams** looking to automate container image builds
+#     and registry publishing on AWS.
+#   tags:
+#     - Infrastructure
+#     - Cloud
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Build and push Docker images to AWS Elastic Container Registry (ECR) with
+#     Kestra. A secure CI/CD workflow for automated container builds on AWS.

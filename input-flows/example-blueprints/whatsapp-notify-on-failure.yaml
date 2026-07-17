@@ -1,0 +1,62 @@
+id: whatsapp-notify-on-failure
+namespace: company.team
+
+tasks:
+  - id: send_notification
+    type: io.kestra.plugin.meta.whatsapp.WhatsAppExecution
+    url: "{{ secret('WHATSAPP_WEBHOOK') }}"
+    profileName: MyProfile
+    from: "1234567890"
+    whatsAppIds:
+      - some waId
+      - waId No2
+    payload: "Kestra Workflow Failure: {{ trigger.executionId }} has failed on {{
+      taskrun.startDate }}"
+    executionId: "{{ trigger.executionId }}"
+
+triggers:
+  - id: on_failure
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionStatus
+        in:
+          - FAILED
+          - WARNING
+      - type: io.kestra.plugin.core.condition.ExecutionNamespace
+        namespace: company
+        comparison: PREFIX
+
+# extend:
+#   shortDescription: "This system flow will send a WhatsApp notification anytime a workflow in a company namespace (or any nested child namespace) fails."
+#   title: Send a WhatsApp notification when a workflow fails
+#   metaTitle: Send a WhatsApp notification when a workflow fails
+#   description: |
+#     This system flow will send a WhatsApp notification anytime a workflow in a
+#     `company` namespace (or any nested child namespace) fails. 
+# 
+#     Using this pattern, you can send WhatsApp notifications for Kestra workflow
+#     execution failures alongside other notifications.
+# 
+#     You can customize that system flow by modifying the task, adding more tasks
+#     to the flow or adjusting the trigger conditions. Read more about that
+#     pattern in the [Administrator Guide](https://kestra.io/docs/administrator-guide/monitoring).
+# 
+#     Let's create a flow in the namespace with prefix `company` that will always fail.
+# 
+#     ```yaml
+#     id: failure_flow
+#     namespace: company.team
+# 
+#     tasks:
+#       - id: always_fails
+#         type: io.kestra.plugin.core.execution.Fail
+#     ```
+# 
+#     Whenever you run the `failure_flow`, it will trigger an execution of the
+#     `whatsapp_notify_on_failure` flow. As a result, a WhatsApp notification will
+#     be sent so that prompt action can be taken.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Send a WhatsApp notification when a Kestra workflow fails. Automate mobile failure alerts to keep your team informed of pipeline issues in real time.

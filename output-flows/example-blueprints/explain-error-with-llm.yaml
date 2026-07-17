@@ -1,0 +1,67 @@
+id: explain-error-with-llm
+namespace: company.team
+
+tasks:
+  - id: bad_python_task
+    type: io.kestra.plugin.scripts.python.Script
+    script: |
+      myvar = 1
+      print(myvar[0])
+
+errors:
+  - id: ai
+    type: io.kestra.plugin.openai.ChatCompletion
+    apiKey: "{{secret('OPENAI_API_KEY')}}"
+    model: gpt-4o
+    clientTimeout: 100
+    prompt: | 
+      My task generated an error. Explain what might have caused it.  
+      Do not use backticks, quotes, asterisks, or any Markdown formatting.  
+      Ensure all text is treated as plain text without any special characters or indentation.  
+      If mentioning code or error messages, format them as inline text with no special symbols.  
+      Don't use any quotes in your response and if you do, 
+      make sure to escape them with back-slashes e.g. \"Command failed with exit code 1\".       
+      Error log — {{errorLogs()}}
+
+  - id: alert
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
+    url: "{{secret('SLACK_WEBHOOK_URL')}}"
+    messageText: "Failure alert for flow *{{flow.namespace}}.{{flow.id}}* with ID `{{execution.id}}`.\n\n*Error:* {{outputs.ai.choices[0].message.content}}"
+# extend:
+#   shortDescription: "This blueprint demonstrates how to use a Large Language Model (LLM) to automatically analyze, explain, and contextualize workflow errors, then deliver."
+#   title: Explain Workflow Failures with OpenAI and Send Insights to Slack
+#   metaTitle: Explain Workflow Failures with OpenAI and Send
+#   description: |
+#     This blueprint demonstrates how to use a **Large Language Model (LLM)** to
+#     automatically **analyze, explain, and contextualize workflow errors**, then
+#     deliver human-readable explanations directly to **Slack**.
+# 
+#     It shows how to:
+# 
+#     1. Capture detailed error logs from failed workflow executions.
+#     2. Send raw error context to an **OpenAI-powered LLM** for intelligent
+#        analysis and explanation.
+#     3. Generate clear, plain-text explanations describing what caused the error
+#        and how it might be resolved.
+#     4. Enrich Slack alerts with **AI-generated insights**, not just stack traces
+#        or raw logs.
+#     5. Reduce mean time to resolution (MTTR) by giving engineers immediate,
+#        actionable context when failures occur.
+# 
+#     This pattern is ideal for **DevOps**, **platform engineering**, and
+#     **data teams** looking to combine **AI observability**, **automated
+#     debugging**, and **incident response** into a single workflow.
+# 
+#     By integrating LLMs directly into failure handling, this blueprint turns
+#     cryptic error messages into understandable explanations that accelerate
+#     troubleshooting and improve operational visibility.
+#   tags:
+#     - AI
+#     - Core
+#     - Infrastructure
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Use AI to automatically explain workflow errors and send intelligent Slack
+#     alerts. An LLM-powered DevOps blueprint for faster debugging and incident
+#     response.

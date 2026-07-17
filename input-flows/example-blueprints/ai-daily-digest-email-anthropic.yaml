@@ -1,0 +1,88 @@
+id: ai-daily-digest-email-anthropic
+namespace: company.team
+
+inputs:
+  - id: location
+    type: STRING
+    defaults: London
+
+tasks:
+  - id: get_weather
+    type: io.kestra.plugin.core.http.Request
+    uri: "https://api.openweathermap.org/data/2.5/weather?q={{inputs.location}}&appid={{secret('OPENWEATHERMAP_API_KEY')}}&units=metric"
+
+  - id: get_digest
+    type: io.kestra.plugin.anthropic.ChatCompletion
+    system: "You're a helpful assistant who is going to help plan the day ahead. I'm going to ask a number of questions but I want the final response to be a morning summary of the day in a friendly manner. Add new lines between context changes as this response will be used in an email."
+    messages:
+      - type: USER
+        content: "What is the weather like in London? I fetched weather data from OpenWeatherMap Weather API. Use the data from that JSON response to summarise the weather for my morning summary to help me decide what I should wear for the day. The response is {{ outputs.get_weather.body }}"
+      - type: USER
+        content: "I need to commute from Cambridge train station to 10 Downing Street in London for 9am arrival. What train should I catch?"
+
+  - id: turn_into_html
+    type: io.kestra.plugin.anthropic.ChatCompletion
+    system: "You are going to turn any user message into a nicely formatted HTML email. It will contain information about the weather as well as a commute. Break these into 2 separate sections that are clear summaries for the user to help them plan their day. These sections will be centred to the middle of the email but the text inside will remain left aligned. They will receive this first thing in the morning. This is only the body of the email so no need to add a subject. Add 'Good morning! Here is your daily digest:' at the start. At the bottom, just put Daily Digest."
+    messages:
+      - type: USER
+        content: "{{ outputs.get_digest.outputText }}"
+
+  - id: send_digest
+    type: io.kestra.plugin.email.MailSend
+    from: "{{ secret('EMAIL') }}"
+    to: "{{ secret('EMAIL') }}"
+    username: "{{ secret('EMAIL') }}"
+    password: "{{ secret('EMAIL_PASSWORD') }}"
+    host: smtp.gmail.com
+    port: 465
+    subject: "Daily Digest"
+    htmlTextContent: "{{ outputs.turn_into_html.outputText }}"
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 * * *"
+
+pluginDefaults:
+  - forced: false
+    type: io.kestra.plugin.anthropic.ChatCompletion
+    values:
+      apiKey: "{{ secret('ANTHROPIC_API_KEY') }}"
+      model: "claude-3-5-sonnet-20241022"
+      maxTokens: 1024
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to automate a personalized daily digest using AI, combining real-time weather data, commute planning, and natural-language."
+#   title: Generate and Send a Personalized AI-Powered Daily Digest Email Every Morning
+#   metaTitle: Send a Personalized AI-Powered Daily Digest Email
+#   description: |
+#     This blueprint demonstrates how to **automate a personalized daily digest**
+#     using AI, combining **real-time weather data**, **commute planning**, and
+#     **natural-language summaries** into a single, well-formatted email delivered
+#     every morning.
+# 
+#     It shows how to:
+# 
+#     1. Fetch real-time weather conditions for a chosen location using a public
+#        weather API.
+#     2. Ask an AI model to interpret external data and generate a friendly,
+#        human-readable morning summary.
+#     3. Enrich the digest with contextual information such as commute planning
+#        and travel timing.
+#     4. Transform plain-text AI output into a structured HTML email suitable for
+#        daily consumption.
+#     5. Send the resulting digest automatically on a schedule, without manual
+#        intervention.
+# 
+#     This pattern is ideal for **personal productivity automation**, **smart
+#     assistants**, **daily briefings**, and **context-aware notifications** where
+#     multiple data sources must be summarized into a single, actionable message.
+# 
+#     The flow can easily be extended to include additional signals such as
+#     calendar events, reminders, task lists, or alerts, making it a flexible
+#     foundation for building AI-powered daily assistants.
+#   tags:
+#     - AI
+#   ee: false
+#   demo: false
+#   metaDescription: Generate and send a personalized daily digest email with Kestra and Anthropic. Combine real-time weather, commute data, and AI summaries into a briefing.

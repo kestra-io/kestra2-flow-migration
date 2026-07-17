@@ -1,0 +1,25 @@
+id: flow_mixed_triggers
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered by success or failure of flow_a!
+
+triggers:
+  - id: on_completion
+    type: io.kestra.plugin.core.trigger.Flow
+    states: [SUCCESS]
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionFlow
+        namespace: company.team
+        flowId: flow_a
+  - id: on_failure
+    type: io.kestra.plugin.core.trigger.Flow
+    states: [FAILED]
+    preconditions:
+      id: flowsFailure
+      flows:
+        - namespace: company.team
+          flowId: flow_a
+          states: [FAILED]

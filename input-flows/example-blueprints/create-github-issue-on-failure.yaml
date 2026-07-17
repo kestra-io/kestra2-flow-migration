@@ -1,0 +1,78 @@
+id: create-github-issue-on-failure
+namespace: company.team
+
+tasks:
+  - id: create_issue
+    type: io.kestra.plugin.github.issues.Create
+    jwtToken: "{{ secret('GITHUB_TOKEN') }}"
+    repository: kestra-io/kestra
+    title: Kestra Workflow Failure
+    body: "{{ trigger.executionId }} has failed on {{ taskrun.startDate }}"
+    labels:
+      - bug
+      - workflow
+
+triggers:
+  - id: on_failure
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionStatus
+        in:
+          - FAILED
+          - WARNING
+      - type: io.kestra.plugin.core.condition.ExecutionNamespace
+        namespace: company
+        comparison: PREFIX
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to automatically create a GitHub issue when a workflow execution fails, enabling fast incident tracking and structured."
+#   title: Automatically Create a GitHub Issue When a Workflow or Job Fails
+#   metaTitle: Automatically Create a GitHub Issue When a Workflow
+#   description: |
+#     This blueprint demonstrates how to **automatically create a GitHub issue
+#     when a workflow execution fails**, enabling fast incident tracking and
+#     structured remediation using GitHub Issues.
+# 
+#     The automation works as follows:
+# 
+#     - Listens for failed or warning executions within a defined namespace.
+#     - Triggers only when a failure condition is met.
+#     - Creates a new GitHub issue containing the execution ID and failure
+#       timestamp.
+#     - Applies labels to help categorize incidents and prioritize fixes.
+# 
+#     This pattern is ideal for:
+#       - Incident management and operational visibility
+#       - Automatically tracking failures as actionable issues
+#       - Integrating automation failures into existing GitHub workflows
+#       - Reducing manual incident reporting and follow-ups
+#       - Creating an auditable trail of execution failures
+# 
+#     You can customize this automation by:
+#       - Adjusting trigger conditions (status, namespace, severity)
+#       - Enriching the issue title or body with additional context
+#       - Adding more actions such as notifications or escalations
+#       - Targeting different repositories or labels
+# 
+#     Learn more about failure-driven automation patterns in the
+#     [Administrator Guide](https://kestra.io/docs/administrator-guide/monitoring).
+# 
+#     To test the setup, you can create a flow that always fails:
+# 
+#     ```yaml
+#     id: failure_flow
+#     namespace: company.team
+# 
+#     tasks:
+#       - id: always_fails
+#         type: io.kestra.plugin.core.execution.Fail
+#     ```
+# 
+#     Running this flow will automatically trigger the issue-creation process,
+#     ensuring failures are immediately captured and tracked in GitHub.
+#   tags:
+#     - Infrastructure
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Automatically create a GitHub issue when a Kestra workflow fails. Track incidents, capture failure context, and manage pipeline issues directly in GitHub.

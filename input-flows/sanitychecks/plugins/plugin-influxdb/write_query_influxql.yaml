@@ -1,0 +1,49 @@
+id: write_test
+namespace: sanitychecks.plugin-influxdb
+
+inputs:
+  - id: cs
+    type: STRING
+    defaults: "http://localhost:8086"
+
+  - id: token
+    type: STRING
+    defaults: "my-token"
+
+  - id: org
+    type: STRING
+    defaults: "my-org"
+
+  - id: bucket
+    type: STRING
+    defaults: "test-bucket"
+
+tasks:
+  - id: write
+    type: io.kestra.plugin.influxdb.Write
+    connection:
+      url: "{{ inputs.url }}"
+      token: "{{ inputs.token }}"
+    org: "{{ inputs.org }}"
+    bucket: "{{ inputs.bucket }}"
+    source: |
+      water,sensor_id=TLM0100 temperature=73.97
+      water,sensor_id=TLM0100 humidity=35.23
+      water,sensor_id=TLM0100 co=0.48
+
+  - id: query
+    type: io.kestra.plugin.influxdb.InfluxQLQuery
+    connection:
+      url: "{{ inputs.cs }}"
+      token: "{{ inputs.token }}"
+    org: "{{ inputs.org }}"
+    bucket: "{{ inputs.bucket }}"
+    query: "SELECT * FROM water WHERE time > now() - 10m"
+    fetchType: FETCH
+
+  - id: assert
+    type: io.kestra.plugin.core.execution.Assert
+    errorMessage: "Query didn't return 3 expected points"
+    conditions:
+      - "{{ outputs.query.rows | length == 3 }}"
+

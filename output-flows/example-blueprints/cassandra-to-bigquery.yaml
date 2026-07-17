@@ -1,0 +1,80 @@
+id: cassandra-to-bigquery
+namespace: company.team
+
+tasks:
+  - id: query_cassandra
+    type: io.kestra.plugin.cassandra.Query
+    session:
+      endpoints:
+        - hostname: localhost
+          port: 9042
+      localDatacenter: datacenter1
+    cql: |
+      SELECT salary_id, work_year, experience_level, employment_type, 
+      job_title, salary, salary_currency, salary_in_usd, employee_residence,
+      remote_ratio, company_location, company_size
+      FROM test.salary
+    fetchType: STORE
+
+  - id: write_to_csv
+    type: io.kestra.plugin.serdes.csv.IonToCsv
+    from: "{{ outputs.query_cassandra.uri }}"
+
+  - id: load_bigquery
+    type: io.kestra.plugin.gcp.bigquery.Load
+    from: "{{ outputs.write_to_csv.uri }}"
+    destinationTable: my_project.my_dataset.my_table
+    serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT_JSON') }}"
+    projectId: my_project
+    format: CSV
+    csvOptions:
+      fieldDelimiter: ","
+      skipLeadingRows: 1
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to extract data from Apache Cassandra, convert it into CSV format, and load it into Google BigQuery to support analytics and."
+#   title: Build an ETL Pipeline from Cassandra to BigQuery Using CSV Export
+#   metaTitle: Build an ETL Pipeline from Cassandra to BigQuery
+#   description: |
+#     This blueprint demonstrates how to **extract data from Apache Cassandra,
+#     convert it into CSV format, and load it into Google BigQuery** to support
+#     analytics and reporting use cases.
+# 
+#     The flow performs a complete ETL process:
+# 
+#     - Executes a CQL query against a Cassandra table to extract operational
+#       data.
+#     - Serializes the query results and converts them into a CSV file.
+#     - Loads the CSV data into BigQuery for analytics and downstream processing.
+# 
+#     The example uses data from [this public
+#     dataset](https://gist.githubusercontent.com/Ben8t/f182c57f4f71f350a54c65501d30687e/raw/940654a8ef6010560a44ad4ff1d7b24c708ebad4/salary-data.csv),
+#     making it easy to reproduce the setup locally.
+# 
+#     This pattern is well suited for:
+#       - Migrating data from Cassandra to BigQuery
+#       - Building batch ETL pipelines from NoSQL databases
+#       - Enabling analytics on operational workloads
+#       - Feeding data warehouses from distributed data stores
+# 
+#     Before running the flow, ensure that the destination BigQuery table exists,
+#     or extend the flow to create it dynamically by providing a schema in the
+#     BigQuery load task.
+# 
+#     For local testing, Cassandra can be started using Docker:
+# 
+#       - Run `docker run -p 9042:9042 cassandra`
+#       - Use `docker ps` to find the container ID
+#       - Connect using `docker exec -it <container_id> cqlsh`
+# 
+#     Then create and populate the Cassandra table using the provided CQL
+#     statements. Once data is available, the flow can be executed end to end to
+#     move data from Cassandra into BigQuery.
+# 
+#     This blueprint provides a clear foundation for **NoSQL-to-warehouse ETL
+#     pipelines**, bridging operational databases and analytical platforms.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Extract data from Cassandra, export as CSV, and load into BigQuery with Kestra. Build a batch ETL pipeline to move NoSQL data to an analytics-ready warehouse.

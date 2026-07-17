@@ -1,0 +1,101 @@
+id: debezium-mysql-realtime-trigger
+namespace: company.team
+
+tasks:
+  - id: if
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ trigger.data.metadata.operation == 'DELETE' }}"
+    then:
+      - id: log
+        type: io.kestra.plugin.core.log.Log
+        message: Employee {{ trigger.data.first_name }} {{ trigger.data.last_name }} has
+          been deleted
+
+      - id: send_alert
+        type: io.kestra.plugin.slack.notifications.SlackExecution
+        url: "{{ secret('SLACK_WEBHOOK') }}"
+        customMessage: Employee {{ trigger.data.first_name }} {{ trigger.data.last_name }} has been deleted
+
+triggers:
+  - id: realtime_trigger
+    type: io.kestra.plugin.debezium.mysql.RealtimeTrigger
+    snapshotMode: NEVER
+    includedTables: test.employees
+    serverId: "12345"
+    hostname: localhost
+    port: "13306"
+    username: mysql_username
+    password: mysql_password
+
+# extend:
+#   shortDescription: "This flow listens to real-time MySQL change data capture (CDC) events using the Debezium MySQL Realtime Trigger and reacts immediately when rows are deleted."
+#   title: Monitor MySQL DELETE events in real time with Debezium and send Slack alerts
+#   metaTitle: Monitor MySQL DELETE events in real time
+#   description: |
+#     This flow listens to **real-time MySQL change data capture (CDC) events**
+#     using the Debezium MySQL Realtime Trigger and reacts immediately when rows
+#     are deleted from a table.
+# 
+#     **How it works:**
+#     - The Debezium trigger subscribes directly to the MySQL binlog for the
+#       `test.employees` table.
+#     - Every INSERT, UPDATE, or DELETE event is emitted as a structured event
+#       and injected into the flow as `trigger.data`.
+#     - The flow evaluates the CDC metadata and executes logic **only when the
+#       operation type is `DELETE`**.
+#     - When a deletion occurs, the flow logs the employee name and sends a Slack
+#       notification in real time.
+# 
+#     **Important:**  
+#     There is no external script or additional code required. The CDC payload
+#     (including column values such as `first_name` and `last_name`) is provided
+#     directly by Debezium and accessed via `trigger.data`.
+# 
+#     **MySQL setup (binlog required):**
+#     To enable CDC, MySQL must run with binary logging enabled. The following
+#     Docker command starts a compatible MySQL instance:
+# 
+#     ```
+#     docker run -d \
+#       --name mysql \
+#       -v /var/lib/mysql:/var/lib/mysql \
+#       -p 13306:3306 \
+#       -e MYSQL_ROOT_PASSWORD=root \
+#       mysql \
+#       mysqld \
+#       --datadir=/var/lib/mysql \
+#       --user=mysql \
+#       --server-id=12345 \
+#       --log-bin=/var/lib/mysql/mysql-bin.log \
+#       --binlog_do_db=test
+#     ```
+# 
+#     Grant replication permissions and verify binlog support:
+# 
+#     ```
+#     GRANT REPLICATION SLAVE ON *.* TO 'root'@'%';
+#     SHOW VARIABLES LIKE 'log_bin';
+#     ```
+# 
+#     Create the database and table to monitor:
+# 
+#     ```
+#     CREATE DATABASE test;
+# 
+#     CREATE TABLE test.employees (
+#       id INT,
+#       first_name VARCHAR(25),
+#       last_name VARCHAR(25),
+#       city VARCHAR(25)
+#     );
+#     ```
+# 
+#     Once configured, any DELETE operation on `test.employees` will immediately
+#     trigger this flow and send a Slack alert.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Monitor MySQL DELETE events in real time using Debezium CDC and automatically send Slack alerts when rows are removed.
+# 

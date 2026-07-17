@@ -1,0 +1,76 @@
+id: create-pagerduty-alert-on-failure
+namespace: company.team
+
+tasks:
+  - id: create_pagerduty_alert
+    type: io.kestra.plugin.pagerduty.PagerDutyExecution
+    url: "{{ secret('PAGERDUTY_EVENT') }}"
+    payloadSummary: "Kestra Workflow Failure: {{ trigger.executionId }} has failed
+      on {{ taskrun.startDate }}"
+    deduplicationKey: dedupkey
+    routingKey: routingkey
+    eventAction: trigger
+    executionId: "{{ trigger.executionId }}"
+
+triggers:
+  - id: on_failure
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ trigger.namespace startsWith 'company' }}"
+        states:
+          - FAILED
+          - WARNING
+
+# extend:
+#   shortDescription: "This system blueprint implements an incident response and on-call alerting pattern by automatically triggering PagerDuty alerts whenever a Kestra workflow."
+#   title: Trigger PagerDuty Alerts Automatically for Incident Response
+#   metaTitle: Trigger PagerDuty Alerts Automatically for Incident
+#   description: |
+#     This system blueprint implements an **incident response and on-call alerting
+#     pattern** by automatically triggering **PagerDuty alerts** whenever a
+#     Kestra workflow execution fails or enters a warning state.
+# 
+#     It demonstrates how to:
+# 
+#     1. Monitor workflow executions globally using a system-level flow trigger.
+#     2. Detect failed or warning executions across all namespaces with a defined
+#        prefix.
+#     3. Send structured PagerDuty events enriched with execution metadata such as
+#        execution ID and failure timestamp.
+#     4. Deduplicate alerts and route incidents to the appropriate on-call teams
+#        using PagerDuty event configuration.
+#     5. Integrate workflow failure alerts into existing PagerDuty incident
+#        response and escalation policies.
+# 
+#     This pattern is ideal for **SRE**, **platform engineering**, and **operations
+#     teams** who rely on PagerDuty for real-time incident detection and on-call
+#     response.
+# 
+#     You can customize this system flow by modifying the task, adding additional
+#     enrichment or notification steps, or adjusting the trigger conditions. Read
+#     more about this pattern in the [Administrator
+#     Guide](https://kestra.io/docs/administrator-guide/monitoring).
+# 
+#     Example failure flow used to trigger this system flow:
+# 
+#     ```yaml
+#     id: failure_flow
+#     namespace: company.team
+# 
+#     tasks:
+#       - id: always_fails
+#         type: io.kestra.plugin.core.execution.Fail
+#     ```
+# 
+#     Whenever the `failure_flow` is executed and fails, this system blueprint
+#     automatically triggers a PagerDuty alert, ensuring rapid awareness and
+#     response to workflow incidents.
+#   tags:
+#     - Infrastructure
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Automatically trigger PagerDuty alerts when Kestra workflows fail. An
+#     incident response blueprint for on-call alerting and reliability monitoring.
+# 

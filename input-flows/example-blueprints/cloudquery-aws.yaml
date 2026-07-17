@@ -1,0 +1,109 @@
+id: cloudquery-aws
+namespace: company.team
+
+tasks:
+  - id: cloudquery
+    type: io.kestra.plugin.cloudquery.CloudQueryCLI
+    inputFiles:
+      config.yml: |
+        kind: source
+        spec:
+          name: aws
+          path: cloudquery/aws
+          version: "v22.4.0"
+          tables: ["aws_s3*"]
+          destinations: ["postgresql"]
+          spec:
+        ---
+        kind: destination
+        spec:
+          name: "postgresql"
+          version: "v5.0.3"
+          path: "cloudquery/postgresql"
+          write_mode: "overwrite-delete-stale"
+          spec:
+            connection_string: ${PG_CONNECTION_STRING}
+    commands:
+      - cloudquery sync config.yml --log-console
+    env:
+      AWS_ACCESS_KEY_ID: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+      AWS_SECRET_ACCESS_KEY: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+      AWS_DEFAULT_REGION: "{{ secret('AWS_DEFAULT_REGION') }}"
+      CLOUDQUERY_API_KEY: "{{ secret('CLOUDQUERY_API_KEY') }}"
+      PG_CONNECTION_STRING: postgresql://postgres:{{ secret('DB_PASSWORD') }}@host.docker.internal:5432/postgres?sslmode=disable
+
+  - id: query_s3_metadata_in_postgres
+    type: io.kestra.plugin.jdbc.postgresql.Query
+    url: jdbc:postgresql://host.docker.internal:5432/postgres
+    username: postgres
+    password: "{{ secret('DB_PASSWORD') }}"
+    fetchType: FETCH
+    sql: |
+      SELECT arn, region
+      FROM public.aws_s3_buckets
+      WHERE block_public_acls IS NOT TRUE
+          OR block_public_policy IS NOT TRUE
+          OR ignore_public_acls IS NOT TRUE
+          OR restrict_public_buckets IS NOT TRUE;
+
+# extend:
+#   shortDescription: "This blueprint shows how to ingest AWS infrastructure metadata into PostgreSQL using CloudQuery, then analyze it with SQL for security, governance, and."
+#   title: Ingest AWS Resource Metadata into Postgres Using CloudQuery for Security and Governance Analysis
+#   metaTitle: Ingest AWS Resource Metadata into Postgres
+#   description: |
+#     This blueprint shows how to **ingest AWS infrastructure metadata into
+#     PostgreSQL using CloudQuery**, then analyze it with SQL for security,
+#     governance, and operational insights.
+# 
+#     [CloudQuery](https://www.cloudquery.io/) is an open-source data integration
+#     platform that extracts cloud configuration data and makes it queryable using
+#     standard databases. It [integrates seamlessly with
+#     Kestra](https://www.cloudquery.io/docs/deployment/kestra) to automate cloud
+#     inventory pipelines.
+# 
+#     The automation performs the following steps:
+# 
+#     - Uses CloudQuery to extract metadata about AWS resources (S3 in this
+#       example).
+#     - Loads the extracted data into a PostgreSQL database.
+#     - Keeps the dataset continuously up to date using CloudQuery’s sync model.
+#     - Runs SQL queries to identify potential security and configuration risks,
+#       such as S3 buckets that allow public access.
+# 
+#     This pattern is ideal for:
+#       - Cloud asset inventory and visibility
+#       - Cloud security posture management (CSPM)
+#       - Compliance and governance reporting
+#       - Auditing AWS configurations with SQL
+#       - Replacing ad-hoc CLI or console-based checks with repeatable queries
+# 
+#     To run the example locally, you can start PostgreSQL using Docker:
+# 
+#     ```bash
+#     docker run -d --name mypostgres \
+#       -v mypostgresdb:/var/lib/postgresql/data \
+#       -p 5432:5432 \
+#       -e POSTGRES_USER=postgres \
+#       -e POSTGRES_PASSWORD=yourPassword1234 \
+#       -e POSTGRES_DB=postgres \
+#       postgres:latest
+#     ```
+# 
+#     AWS credentials, CloudQuery API keys, and database passwords should be stored
+#     securely as secrets.
+# 
+#     While this example focuses on S3, CloudQuery supports many AWS services. You
+#     can expand the ingestion scope by adding additional tables such as:
+#     `aws_ec2*`, `aws_ecs*`, `aws_iam*`, `aws_glue*`, or `aws_dynamodb*`. Refer to
+#     the CloudQuery documentation for the [full list of supported
+#     tables](https://www.cloudquery.io/docs/plugins/sources/aws/tables).
+# 
+#     This blueprint provides a reusable foundation for **SQL-based cloud
+#     infrastructure analysis**, turning AWS configuration data into something
+#     teams can query, monitor, and audit at scale.
+#   tags:
+#     - Cloud
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Ingest AWS resource metadata into PostgreSQL using CloudQuery and Kestra. Build a cloud asset inventory and analyze AWS configurations with SQL for security.

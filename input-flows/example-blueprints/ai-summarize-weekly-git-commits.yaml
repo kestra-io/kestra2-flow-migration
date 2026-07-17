@@ -1,0 +1,116 @@
+id: ai-summarize-weekly-git-commits
+namespace: company.team
+
+inputs:
+  - id: repository
+    type: URI
+    defaults: https://github.com/kestra-io/blueprints
+    description: Repository to summarize last week's progress
+
+  - id: branch
+    type: STRING
+    defaults: main
+    description: Git branch to summarize last week's progress
+
+tasks:
+  - id: wdir
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repo
+        type: io.kestra.plugin.git.Clone
+        branch: "{{ inputs.branch }}"
+        url: "{{ inputs.repository }}"
+        # username: your-git-user-name # Needed only for private repos
+        # password: "{{ secret('GITHUB_ACCESS_TOKEN') }}" # Needed only for private repos
+
+      - id: fetch_commits
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: bitnami/git:latest
+        commands:
+          # 0. Set safe.directory for Git to avoid "dubious ownership" errors
+          - git config --global --add safe.directory "$(pwd)"
+
+          # 1. Deepen clone if shallow
+          - git fetch --unshallow origin {{ inputs.branch }} || true
+
+          # 2. Update main branch
+          - git fetch origin {{ inputs.branch }}
+
+          # 3. Fetch commits from the last 7 days (weekly)
+          - git log origin/{{ inputs.branch }} --since="7 days ago" --pretty=format:"%h %ad %s" --date=short > commits.txt
+
+          # 4. Show how many were found
+          - echo "Fetched $(wc -l < commits.txt) commits from the last 7 days"
+        outputFiles:
+          - commits.txt
+      
+      - id: summarize_commits
+        type: io.kestra.plugin.openai.Responses
+        apiKey: "{{ secret('OPENAI_API_KEY') }}"
+        model: gpt-4o
+        input: |
+          Summarize the following Git commits into a clear and concise weekly development update for users.
+          Output plain text for Slack, no markdown or extra formatting.
+          Here are the commit messages:
+
+          {{ read(outputs.fetch_commits.outputFiles['commits.txt']) }}       
+
+          Ensure no markdown syntax like **bold text** in the response — stick to plain text!
+
+  - id: slack
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
+    url: https://kestra.io/api/mock # replace with "{{secret('SLACK_WEBHOOK_URL')}}" for production
+    messageText: "This week's repository updates for {{ inputs.repository }}. {{ outputs.summarize_commits.outputText }}"
+
+triggers:
+  - id: weekly-trigger
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 15 * * 5"  # Every Friday at 15:00 (3:00 PM) UTC
+
+
+# extend:
+#   shortDescription: "This blueprint automates weekly engineering status reporting by analyzing Git commit activity and generating a concise, human-readable summary using AI, then."
+#   title: Summarize Weekly Git Commits with AI and Send a Development Report to Slack
+#   metaTitle: Summarize Weekly Git Commits and Report to Slack
+#   description: |
+#     This blueprint automates **weekly engineering status reporting** by
+#     analyzing **Git commit activity** and generating a concise, human-readable
+#     summary using AI, then delivering it directly to Slack.
+# 
+#     It performs the following actions every week:
+# 
+#     - Clones a Git repository and checks out the selected branch
+#     - Retrieves all commits from the last 7 days
+#     - Uses an AI model to transform raw commit messages into a clear weekly
+#       development update
+#     - Sends the resulting summary to a Slack channel on a fixed schedule
+# 
+#     This pattern is designed for **engineering teams, technical leads, and
+#     product stakeholders** who want reliable visibility into development
+#     progress without manually writing weekly reports.
+# 
+#     Configuration:
+#       - Set the target Git repository and branch using the `repository` and
+#         `branch` inputs.
+#       - Add an OpenAI API key as a secret (`OPENAI_API_KEY`) to enable AI
+#         summarization.
+#       - Configure a Slack incoming webhook URL to receive weekly updates.
+#       - For private repositories, provide Git credentials (such as a GitHub
+#         Personal Access Token) via secrets.
+#       - Adjust the CRON expression to control when the weekly summary is
+#         generated and sent.
+# 
+#     The automation works with both public and private repositories and can be
+#     adapted to different schedules, branches, or notification channels. By
+#     automating weekly Git summaries, teams reduce reporting overhead while
+#     maintaining consistent, high-quality communication.
+#   tags:
+#     - AI
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Automatically summarize weekly Git commits using AI and send a development
+#     report to Slack. An automation for engineering status updates and progress
+#     reporting.

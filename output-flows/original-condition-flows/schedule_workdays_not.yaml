@@ -1,0 +1,13 @@
+id: schedule_workdays_not
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: This will execute only on workdays (not weekend, not public holiday)!
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    when: "{{ not ((isPublicHoliday(trigger.date, 'FR')) and (isWeekend(trigger.date))) }}"

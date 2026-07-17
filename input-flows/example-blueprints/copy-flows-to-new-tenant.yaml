@@ -1,0 +1,89 @@
+id: copy-flows-to-new-tenant
+namespace: system
+
+variables:
+  host: preview-ee-kafka.kestra.io
+  newTenant: staging
+
+tasks:
+  - id: dev_flows
+    type: io.kestra.plugin.core.http.Download
+    uri: http://{{vars.host}}/api/v1/{{flow.tenantId}}/flows/export/by-query
+    method: GET
+    contentType: application/json
+    headers:
+      authorization: Bearer {{ secret('API_TOKEN') }}
+
+  - id: import_to_staging
+    type: io.kestra.plugin.core.http.Request
+    uri: https://{{ vars.host }}/api/v1/{{ vars.newTenant }}/flows/import
+    method: POST
+    contentType: multipart/form-data
+    formData:
+      fileUpload:
+        name: flows.zip
+        content: "{{ outputs.dev_flows.uri }}"
+    headers:
+      authorization: Bearer {{ secret('API_TOKEN') }}
+
+pluginDefaults:
+  - type: io.kestra.plugin.core.http
+    forced: true
+    values:
+      retry:
+        type: constant
+        interval: PT1S
+        maxAttempt: 3
+
+triggers:
+  - id: daily_at_5_pm
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: 0 17 * * *
+    
+# extend:
+#   shortDescription: "This system blueprint demonstrates how to promote Kestra workflows across tenants and environments (such as development, QA, and staging) using the Kestra API."
+#   title: Multi-Tenant CI/CD, Promote Kestra Flows Across Environments and Tenants Automatically
+#   metaTitle: Promote Kestra Flows Across Environments and Tenants
+#   description: >
+#     This system blueprint demonstrates how to **promote Kestra workflows across
+#     tenants and environments** (such as development, QA, and staging) using the
+#     Kestra API and scheduled automation.
+# 
+#     It shows how to:
+# 
+#     1. Export all workflows from a source tenant (e.g. development) using the
+#        Kestra REST API.
+#     2. Import those workflows into a target tenant or environment (e.g. QA or
+#        staging) in a fully automated manner.
+#     3. Implement environment promotion workflows without relying on external
+#        CI/CD tools.
+#     4. Schedule regular promotions to keep non-production environments in sync
+#        with development.
+#     5. Handle transient API or network failures using built-in retry policies.
+# 
+#     This pattern is particularly useful for **platform teams** and
+#     **enterprise organizations** running **multi-tenant Kestra deployments**
+#     who want a controlled, repeatable promotion process for workflows across
+#     environments.
+# 
+#     To authenticate with the Kestra API, you need to provide an [API
+#     token](https://kestra.io/docs/enterprise/api-tokens) with sufficient
+#     permissions. Tokens can be generated from the UI under the `IAM` section by
+#     creating a service account and issuing an API token. We recommend storing
+#     this token securely as a [secret](https://kestra.io/docs/concepts/secret) in
+#     the `system` namespace.
+# 
+#     This blueprint also demonstrates the use of
+#     [pluginDefaults](https://kestra.io/docs/workflow-components/plugin-defaults)
+#     and [retries](https://kestra.io/docs/workflow-components/retries) to make the
+#     promotion process resilient to temporary failures.
+# 
+#     Make sure to update the `host` and `newTenant` variables to match your
+#     deployment topology and environment naming conventions.
+#   tags:
+#     - Core
+#     - Infrastructure
+#     - System
+#   ee: false
+#   demo: false
+#   metaDescription: Promote Kestra flows across tenants and environments automatically. A multi-tenant CI/CD blueprint for managing workflow deployments at scale.

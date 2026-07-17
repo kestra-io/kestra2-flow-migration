@@ -1,0 +1,18 @@
+id: alert
+namespace: company.system
+
+tasks:
+  - id: send
+    type: io.kestra.plugin.slack.notifications.SlackExecution
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    channel: "#general"
+    executionId: "{{trigger.executionId}}"
+
+triggers:
+  - id: listen
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ (trigger.namespace startsWith 'company.product') or (trigger.flowId == 'cleanup' and trigger.namespace == 'company.system') }}"
+        states:
+          - FAILED
+          - WARNING

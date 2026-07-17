@@ -1,0 +1,71 @@
+id: daily-shopify-stripe-summary
+namespace: company.team
+
+tasks:
+  - id: get_balance
+    type: io.kestra.plugin.stripe.balance.Retrieve
+    apiKey: "{{ secret('STRIPE_API_KEY') }}"
+
+  - id: list_orders
+    type: io.kestra.plugin.shopify.orders.List
+    storeDomain: my-store.myshopify.com
+    accessToken: "{{ secret('SHOPIFY_ACCESS_TOKEN') }}"
+
+  - id: update_notion
+    type: io.kestra.plugin.notion.page.Update
+    apiToken: "{{ secret('NOTION_API_TOKEN') }}"
+    pageId: "12345678-1234-1234-1234-123456789abc"
+    content: |
+      # Daily Update
+
+      Stripe balance:
+      {{ outputs.get_balance }}
+
+      Shopify orders:
+      {{ outputs.list_orders }}
+
+  - id: send_slack_message
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    messageText: "Daily update completed for flow {{ flow.namespace }}.{{ flow.id }} (execution {{ execution.id }})"
+
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0 * * *"
+
+# extend:
+#   shortDescription: "This automation centralizes daily e-commerce operations reporting by collecting financial and order data from Shopify and Stripe, publishing it to Notion, and."
+#   title: Automate daily e-commerce reporting by syncing Shopify orders and Stripe balance to Notion and Slack
+#   metaTitle: "Automate Daily E-Commerce Reporting: Shopify, Stripe, Notion, Slack"
+#   description: |
+#     This automation centralizes **daily e-commerce operations reporting** by
+#     collecting financial and order data from Shopify and Stripe, publishing it
+#     to Notion, and notifying teams in Slack.
+# 
+#     Every day, the flow:
+#       - Retrieves the current Stripe account balance
+#       - Fetches the latest Shopify orders from the store
+#       - Updates a shared Notion page with financial and sales data
+#       - Sends a confirmation message to Slack after completion
+# 
+#     This pattern is ideal for:
+#       - Daily revenue and cash-flow monitoring
+#       - E-commerce operations dashboards in Notion
+#       - Replacing manual checks across Stripe and Shopify
+#       - Keeping finance, ops, and growth teams aligned
+#       - Building a lightweight internal reporting system without BI tooling
+# 
+#     By writing results directly to Notion, this workflow creates a persistent,
+#     auditable daily log that can be enriched over time with additional metrics
+#     such as refunds, payouts, fulfillment status, or customer KPIs.
+# 
+#     Slack notifications provide immediate visibility and confirmation that the
+#     daily reporting pipeline completed successfully, making this workflow
+#     suitable for production operations and executive reporting.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Automate daily e-commerce reporting with Kestra. Fetch Shopify orders and Stripe balance, update a Notion page, and send a daily summary to Slack.

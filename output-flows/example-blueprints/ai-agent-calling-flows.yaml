@@ -1,0 +1,75 @@
+id: ai-agent-calling-flows
+namespace: tutorial
+description: AI Agent
+
+inputs:
+  - id: use_case
+    type: SELECT
+    displayName: Select Your Orchestration Use Case
+    defaults: Just Exploring
+    values:
+      - Business Automation
+      - Business Processes
+      - Data Engineering Pipeline
+      - Data Warehouse and Analytics
+      - Infrastructure Automation
+      - Microservices and APIs
+      - Just Exploring
+tasks:
+  - id: agent
+    type: io.kestra.plugin.ai.agent.AIAgent
+    prompt: |
+      Execute a flow that best matches the {{inputs.use_case}} use case selected by the user. Use the following mapping of use cases to flow ids:
+      - Business Automation: business-automation
+      - Business Processes: business-processes
+      - Data Engineering Pipeline: data-engineering-pipeline
+      - Data Warehouse and Analytics: dwh-and-analytics
+      - Infrastructure Automation: infrastructure-automation
+      - Microservices and APIs: microservices-and-apis
+      - Just Exploring: hello-world
+      Remember that all those flows are in the tutorial namespace.
+      Return only the Execution URI with no extra characters - the structure of URL is {{ kestra.url ?? 'http://localhost:8080/'}}ui/<tenantId>/executions/<namespace>/<flowId>/<id>
+    provider:
+      type: io.kestra.plugin.ai.provider.GoogleGemini
+      modelName: gemini-2.5-flash
+      apiKey: "{{ secret('GEMINI_API_KEY') }}"
+    tools:
+      - type: io.kestra.plugin.ai.tool.KestraFlow
+  
+  - id: uri
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ (kestra.url ?? 'http://localhost:8080/') ~ 'ui/' ~ fromJson((outputs.agent.toolExecutions | first).result).tenantId ~ '/executions/tutorial/' ~ fromJson((outputs.agent.toolExecutions | first).result).flowId ~ '/' ~ fromJson((outputs.agent.toolExecutions | first).result).id }}"
+
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to use an AI agent to select and execute the most relevant automation based on a user\u2019s stated intent or use case."
+#   title: Trigger the Right Automation with an AI Agent Based on User Intent
+#   metaTitle: Trigger the Right Automation with an AI Agent
+#   description: |
+#     This blueprint demonstrates how to use an **AI agent to select and execute
+#     the most relevant automation** based on a user’s stated intent or use case.
+# 
+#     It shows how to:
+# 
+#     1. Capture high-level user intent such as business automation, data
+#        engineering, analytics, or infrastructure operations.
+#     2. Delegate decision-making to an AI agent that maps intent to the most
+#        appropriate predefined workflow.
+#     3. Automatically trigger the selected automation without hardcoded
+#        conditional logic.
+#     4. Use AI tool-calling to invoke orchestration actions programmatically.
+#     5. Return a direct execution URL so users can immediately inspect the result
+#        of the automated decision.
+# 
+#     This pattern is commonly used in **AI-driven orchestration**, **self-service
+#     automation platforms**, **internal developer portals**, and **agent-based
+#     systems** where users should not need to know which workflow to run.
+# 
+#     By allowing an AI agent to route requests to the correct automation, this
+#     approach reduces cognitive load, simplifies onboarding, and enables
+#     intent-based execution across complex automation catalogs.
+#   tags:
+#     - AI
+#   ee: false
+#   demo: false
+#   metaDescription: Use a Kestra AI agent to automatically select and trigger the right automation based on user intent. An action-driven orchestration pattern for agent systems.

@@ -1,0 +1,86 @@
+id: ansible-deploy-configuration
+namespace: company.team
+
+tasks:
+  - id: aws_setup
+    type: io.kestra.plugin.aws.cli.AwsCLI
+    outputFiles:
+      - ssh-key.pem
+    commands:
+      - aws ec2 create-key-pair --key-name ssh-key.pem --query 'KeyMaterial' --output text > ssh-key.pem.pem
+      - aws ec2 create-security-group --group-name MySSHGroup --description "Security group for SSH access"
+      - aws ec2 authorize-security-group-ingress --group-id MySSHGroup --protocol tcp --port 22 --cidr 0.0.0.0/0
+      - aws ec2 run-instances \
+          --image-id ami-0c55b992cb05c84cb \
+          --instance-type t2.micro \
+          --key-name ssh-key.pem \
+          --security-group-ids MySSHGroup \
+          --subnet-id subnet-0123456789abcdef0 \
+          --count 2 | xargs -0 -I {} echo '::{"outputs":{}}::'
+
+  - id: ansible
+    type: io.kestra.plugin.ansible.cli.AnsibleCLI
+    inputFiles:
+      ssh-key.pem: "{{ read(outputs.aws_setup.outputFiles['ss-key.pem']) }}"
+      inventory.ini: |
+        [servers]
+        server1 ansible_connection={{ outputs.aws_setup.vars.ec2[0].ip }} ansible_user=ubuntu ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+        server2 ansible_connection={{ outputs.aws_setup.vars.ec2[1].ip }} ansible_user=ubuntu ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+      playbook.yml: |
+        ---
+        - name: Configuration Deployment Playbook
+          hosts: servers
+          
+          tasks:
+            - name: Deploy .env file
+              copy:
+                content: |
+                  # Environment configuration file
+                  DB_HOST=localhost
+                  DB_PORT=5432
+                  DB_NAME=myapp
+                  DB_USER=appuser
+                  DB_PASSWORD=securepassword
+                  # API Configuration
+                  API_PORT=3000
+                  API_SECRET=your_secret_key
+                  # Application settings
+                  APP_ENV=production
+                  DEBUG=false
+                  LOG_LEVEL=info
+                dest: "/home/app/.env"
+                mode: '0600'
+              register: env_file_result
+    commands:
+      - ansible-playbook -i inventory.ini playbook.yml --key-file ssh-key.pem
+
+# extend:
+#   shortDescription: "This workflow demonstrates how to scale infrastructure configuration deployment using Ansible by provisioning multiple servers and applying configuration files."
+#   title: Ansible Scalability, Deploy Configuration Files to Multiple Servers at Scale
+#   metaTitle: Ansible Scalability
+#   description: |
+#     This workflow demonstrates how to **scale infrastructure configuration
+#     deployment** using **Ansible** by provisioning multiple servers and applying
+#     configuration files consistently across all of them.
+# 
+#     It shows how to:
+# 
+#     1. Provision multiple AWS EC2 instances automatically as part of an
+#        Infrastructure as Code (IaC) workflow.
+#     2. Generate and manage SSH credentials dynamically for secure access to
+#        remote servers.
+#     3. Build a dynamic Ansible inventory based on provisioned infrastructure.
+#     4. Deploy sensitive configuration files (such as `.env` files) to multiple
+#        servers in parallel using Ansible.
+#     5. Enforce consistent configuration and permissions across environments
+#        at scale.
+# 
+#     This flow is ideal for **DevOps**, **platform**, and **infrastructure teams**
+#     looking to automate large-scale configuration management using Ansible
+#     within a cloud-native orchestration platform.
+#   tags:
+#     - Infrastructure
+#     - Cloud
+#   ee: false
+#   demo: false
+#   metaDescription: Deploy configuration files to multiple servers at scale using Ansible, AWS EC2, and Kestra. An Infrastructure as Code workflow for configuration management.

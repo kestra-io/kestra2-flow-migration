@@ -1,0 +1,36 @@
+id: flow-condition-hasretryattempt
+namespace: company.team
+
+tasks:
+  - id: send_slack_message
+    type: io.kestra.plugin.slack.notifications.SlackExecution
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    executionId: "{{ trigger.executionId }}"
+    payload: "Retry attempt failed for {{ trigger.flowId }}"
+
+triggers:
+  - id: flow_condition
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ hasRetryAttempt == true }}"
+
+# extend:
+#   shortDescription: "This flow trigger executes the flow based on the HasRetryAttempt condition."
+#   title: Executes flow on flow trigger with HasRetryAttempt condition
+#   metaTitle: Executes flow on flow trigger with HasRetryAttempt
+#   description: |
+#     This flow trigger executes the flow based on the HasRetryAttempt condition. 
+#     When any flow task on retry enters the state specified in the `in` states under 
+#     the HasRetryAttempt condition, this flow will get triggered.
+# 
+#     In this case, when any flow task on retry enters the `FAILED` state as defined 
+#     in the `in` attribute, this flow will get triggered. This flow will send
+#     a slack message about the retry attempt being failed for that flowId.
+# 
+#     With HasRetryAttempt condition, you can enforce the condition on flow trigger that 
+#     is based on the the state of the task of another flow on retry.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Trigger a Kestra flow when a previous execution has retry attempts. Use the HasRetryAttempt condition to automate retry monitoring and escalation workflows.

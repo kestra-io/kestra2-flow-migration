@@ -1,0 +1,55 @@
+version: 2
+
+project_name: kestra-migrate
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: kestra-migrate
+    main: .
+    binary: kestra-migrate
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.buildDate={{.Date}}
+
+archives:
+  - id: binary
+    ids:
+      - kestra-migrate
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [binary]
+  - id: archive
+    ids:
+      - kestra-migrate
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  name_template: "{{ .Version }}"
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

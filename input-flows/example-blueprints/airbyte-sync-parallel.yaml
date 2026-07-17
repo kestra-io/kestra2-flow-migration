@@ -1,0 +1,67 @@
+id: airbyte-sync-parallel
+namespace: company.team
+
+tasks:
+  - id: data_ingestion
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: salesforce
+        type: io.kestra.plugin.airbyte.connections.Sync
+        connectionId: e3b1ce92-547c-436f-b1e8-23b6936c12ab
+
+      - id: google_analytics
+        type: io.kestra.plugin.airbyte.connections.Sync
+        connectionId: e3b1ce92-547c-436f-b1e8-23b6936c12cd
+
+      - id: facebook_ads
+        type: io.kestra.plugin.airbyte.connections.Sync
+        connectionId: e3b1ce92-547c-436f-b1e8-23b6936c12ef
+
+pluginDefaults:
+  - type: io.kestra.plugin.airbyte.connections.Sync
+    values:
+      url: http://host.docker.internal:8000/
+      username: "{{ secret('AIRBYTE_USERNAME') }}"
+      password: "{{ secret('AIRBYTE_PASSWORD') }}"
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to run parallel ETL ingestion jobs using Airbyte, allowing multiple data sources to be synchronized at the same time."
+#   title: Run Parallel ETL Ingestion with Airbyte to Sync Multiple Data Sources
+#   metaTitle: Run Parallel ETL Ingestion with Airbyte
+#   description: >
+#     This blueprint demonstrates how to **run parallel ETL ingestion jobs**
+#     using **Airbyte**, allowing multiple data sources to be synchronized at the
+#     same time.
+# 
+#     It performs the following actions:
+# 
+#     - Triggers multiple Airbyte syncs concurrently.
+#     - Ingests data from several SaaS sources in parallel to reduce total
+#       pipeline runtime.
+#     - Centralizes Airbyte server configuration and credentials using
+#       `pluginDefaults` to eliminate repetition and simplify maintenance.
+# 
+#     This pattern is commonly used in **ETL pipelines**, **modern data stacks**,
+#     and **analytics platforms** where multiple sources must be ingested on the
+#     same schedule without unnecessary serialization.
+# 
+#     Configuration:
+#       - Store Airbyte server credentials (`url`, `username`, `password`) as
+#         secrets and reference them via `pluginDefaults`.
+#       - Replace the Airbyte `connectionId` values with those from your Airbyte
+#         workspace.
+#       - Adjust the level of parallelism using the `concurrent` property of the
+#         `io.kestra.plugin.core.flow.Parallel` task to control how many syncs run
+#         simultaneously.
+# 
+#     By running ingestion tasks in parallel, this automation helps teams scale
+#     ETL pipelines efficiently while keeping ingestion logic simple and
+#     maintainable.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Run parallel ETL ingestion jobs with Airbyte to sync multiple data sources at
+#     the same time. A scalable pattern for modern data pipelines.
+# 

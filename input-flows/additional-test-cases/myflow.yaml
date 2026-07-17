@@ -1,0 +1,14 @@
+id: myflow
+namespace: company.team
+inputs:
+  - name: beverage
+    type: STRING
+    defaults: coffee
+  - name: quantity
+    type: INT
+    defaults: 1
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World! 🚀

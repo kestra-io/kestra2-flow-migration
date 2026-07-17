@@ -1,0 +1,86 @@
+id: couchbase-to-pandas
+namespace: company.team
+
+tasks:
+  - id: query_couchbase
+    type: io.kestra.plugin.couchbase.Query
+    connectionString: couchbase://10.57.233.41
+    username: admin
+    password: admin_password
+    query: |
+      SELECT id, country, name, type, iata, icao 
+      FROM `travel-sample`.`inventory`.`airline`
+    fetchType: FETCH
+
+  - id: pandas
+    type: io.kestra.plugin.scripts.python.Script
+    dependencies:
+      - pandas
+    outputFiles:
+      - final.csv
+    script: |
+      import pandas as pd
+
+      data = {{ outputs.query_couchbase.rows }}
+      df = pd.DataFrame(data)
+      agg_df = df.groupby('country')['country'].count().reset_index(name="count")
+
+      print(agg_df.head())
+      agg_df.to_csv("final.csv", index=False)
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to extract data from a Couchbase NoSQL database and transform it using Python and Pandas to support analytics and exploratory."
+#   title: Extract Data from Couchbase and Transform It with Pandas for Analytics
+#   metaTitle: Extract from Couchbase and Transform with Pandas
+#   description: |
+#     This blueprint demonstrates how to **extract data from a Couchbase NoSQL
+#     database and transform it using Python and Pandas** to support analytics and
+#     exploratory data processing.
+# 
+#     The automation follows a simple but powerful ETL pattern:
+# 
+#     - Executes a N1QL query against a Couchbase bucket to retrieve structured
+#       documents.
+#     - Loads the query results into a Pandas DataFrame.
+#     - Performs aggregations and transformations using Pandas.
+#     - Writes the transformed dataset to a CSV file for downstream analysis or
+#       storage.
+# 
+#     This pattern is ideal for:
+#       - Analyzing operational data stored in Couchbase
+#       - Prototyping analytics pipelines before moving to a data warehouse
+#       - Data science and reporting workflows
+#       - Bridging NoSQL databases and Python-based analytics
+# 
+#     The example uses Couchbase’s built-in `travel-sample` bucket, making it easy
+#     to reproduce locally.
+# 
+#     To run Couchbase locally with Docker:
+# 
+#     ```bash
+#     docker run -d --name db \
+#       -p 8091-8096:8091-8096 \
+#       -p 11210-11211:11210-11211 \
+#       couchbase
+#     ```
+# 
+#     Once the container is running:
+#       - Open http://localhost:8091/
+#       - Select "Setup New Cluster"
+#       - Provide a cluster name, admin username, and password
+#       - Load the `travel-sample` bucket from the **Sample Buckets** section
+# 
+#     After the sample data is available, this blueprint can be executed end to
+#     end to extract, transform, and analyze Couchbase data using Python.
+# 
+#     This provides a reusable foundation for **NoSQL-to-Python ETL pipelines**
+#     and lightweight analytics workflows.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Extract data from Couchbase and transform it with Pandas.
+#     Build a Python-based ETL pipeline to analyze NoSQL data and generate
+#     analytics-ready datasets.
+# 

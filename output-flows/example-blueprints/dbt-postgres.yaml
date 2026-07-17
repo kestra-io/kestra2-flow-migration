@@ -1,0 +1,64 @@
+id: dbt-postgres
+namespace: company.team
+
+tasks:
+  - id: git
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-example
+        branch: main
+
+      - id: dbt
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        containerImage: ghcr.io/kestra-io/dbt-postgres:latest
+        profiles: |
+          my_dbt_project:
+            outputs:
+              dev:
+                type: postgres
+                host: myhostname.us-east-1.rds.amazonaws.com
+                user: "{{ secret('POSTGRES_USER') }}"
+                password: "{{ secret('POSTGRES_PASSWORD') }}"
+                port: 5432
+                dbname: postgres
+                schema: public
+                threads: 8
+                connect_timeout: 10
+            target: dev
+        commands:
+          - dbt deps
+          - dbt build
+
+# extend:
+#   shortDescription: "This workflow runs a production-ready dbt ELT pipeline on PostgreSQL by executing dbt directly from a Git repository inside a Docker container."
+#   title: Run dbt ELT pipelines on Postgres from Git using Docker
+#   metaTitle: Run dbt ELT pipelines on Postgres from Git
+#   description: |
+#     This workflow runs a **production-ready dbt ELT pipeline on PostgreSQL**
+#     by executing dbt directly from a Git repository inside a Docker container.
+# 
+#     The flow performs the following actions:
+#       - Clones a dbt project from GitHub
+#       - Connects dbt to a PostgreSQL database using a secure profile
+#       - Installs project dependencies with `dbt deps`
+#       - Builds models, tests, and snapshots using `dbt build`
+#       - Executes the full dbt pipeline in an isolated, reproducible Docker environment
+# 
+#     This pattern is well suited for:
+#       - Analytics engineering on PostgreSQL
+#       - dbt ELT pipelines on Amazon RDS, Cloud SQL, or self-managed Postgres
+#       - CI/CD workflows for dbt projects
+#       - Data transformations directly inside operational or analytical Postgres databases
+#       - Teams standardizing dbt execution with Docker and Git
+# 
+#     Database credentials are managed securely using Kestra secrets, allowing the
+#     same workflow to be reused across environments (development, staging,
+#     production) without changing the dbt project itself.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Run dbt ELT pipelines on PostgreSQL from Git using Docker and Kestra. Execute dbt deps and dbt build to transform data in your Postgres warehouse.

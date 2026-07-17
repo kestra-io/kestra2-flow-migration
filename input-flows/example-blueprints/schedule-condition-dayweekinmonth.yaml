@@ -1,0 +1,35 @@
+id: schedule-condition-dayweekinmonth
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Demo for DayWeekInMonth condition 
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DayWeekInMonth
+        date: "{{ trigger.date }}"
+        dayOfWeek: SATURDAY
+        dayInMonth: LAST
+
+# extend:
+#   shortDescription: "This trigger executes the flow at 11am every day with the schedule condition that the trigger date should fall on the last Saturday of the month."
+#   title: Executes flow on schedule trigger with DayWeekInMonth condition
+#   metaTitle: Executes flow on schedule trigger
+#   description: |
+#     This trigger executes the flow at 11am every day with the schedule condition that the 
+#     trigger date should fall on the last Saturday of the month. Hence, the flow will 
+#     actually run only once in a month, i.e. on the last Saturday of the month at 11am.
+# 
+#     With DayWeekInMonth condition, you can enforce the condition for the flow to run on 
+#     only a particular day of the week relative to the current month.
+# 
+#   tags:
+#     - Core
+#   ee: false
+#   demo: true
+#   metaDescription: Schedule Kestra flows to run on a specific day of the week within a month. Use the DayWeekInMonth condition for fine-grained monthly scheduling automation.

@@ -1,0 +1,13 @@
+id: schedule_day_week_monday
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: This will execute only on Mondays!
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    when: "{{ dayOfWeek(trigger.date) == 'MONDAY' }}"

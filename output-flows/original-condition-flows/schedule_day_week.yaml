@@ -1,0 +1,13 @@
+id: conditions
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: This will execute only on Thursday!
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "@hourly"
+    when: "{{ dayOfWeek(trigger.date) == 'THURSDAY' }}"

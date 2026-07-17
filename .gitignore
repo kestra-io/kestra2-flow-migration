@@ -1,0 +1,49 @@
+input-flows/real-world-examples
+output-flows/real-world-examples
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go build
+/kestra2-flow-migration
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Local plugin jars downloaded for local v2 validation (not vendored)
+/plugins/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+.windsurf
+
+# OS
+.DS_Store
+Thumbs.db
+kestra-migrate
+
+# GoReleaser output
+dist/
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json

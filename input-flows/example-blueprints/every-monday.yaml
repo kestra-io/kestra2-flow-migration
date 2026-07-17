@@ -1,0 +1,29 @@
+id: every-monday
+namespace: company.team
+
+tasks:
+  - id: log_trigger_or_execution_date
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ trigger.date ?? execution.startDate }}"
+
+triggers:
+  - id: first_monday_of_the_month
+    type: io.kestra.plugin.core.trigger.Schedule
+    timezone: Europe/Berlin
+    cron: 0 11 * * MON
+    conditions:
+      - type: io.kestra.plugin.core.condition.DayWeekInMonth
+        date: "{{ trigger.date }}"
+        dayOfWeek: MONDAY
+        dayInMonth: FIRST
+
+# extend:
+#   shortDescription: "This flow will run only on the first Monday of each month at 11 AM."
+#   title: Run a flow on the first Monday of each month at 11 AM
+#   metaTitle: Run a flow on the first Monday of each month at 11
+#   description: This flow will run only on the first Monday of each month at 11 AM.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: true
+#   metaDescription: Run Kestra workflows on the first Monday of each month. Combine cron schedules with flow conditions for precise monthly automation control.

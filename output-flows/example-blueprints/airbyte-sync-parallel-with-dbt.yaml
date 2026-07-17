@@ -1,0 +1,103 @@
+id: airbyte-sync-parallel-with-dbt
+namespace: company.team
+
+tasks:
+  - id: data_ingestion
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: salesforce
+        type: io.kestra.plugin.airbyte.connections.Sync
+        connectionId: e3b1ce92-547c-436f-b1e8-23b6936c12ab
+
+      - id: google_analytics
+        type: io.kestra.plugin.airbyte.connections.Sync
+        connectionId: e3b1ce92-547c-436f-b1e8-23b6936c12cd
+
+      - id: facebook_ads
+        type: io.kestra.plugin.airbyte.connections.Sync
+        connectionId: e3b1ce92-547c-436f-b1e8-23b6936c12ef
+
+  - id: dbt
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-demo
+        branch: main
+
+      - id: dbt_build
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: ghcr.io/kestra-io/dbt-bigquery:latest
+        inputFiles:
+          .profile/profiles.yml: |
+            jaffle_shop:
+              outputs:
+                dev:
+                  type: bigquery
+                  dataset: your_big_query_dataset_name
+                  project: your_big_query_project
+                  fixed_retries: 1
+                  keyfile: sa.json
+                  location: EU
+                  method: service-account
+                  priority: interactive
+                  threads: 8
+                  timeout_seconds: 300
+              target: dev
+          sa.json: "{{ secret('GCP_CREDS') }}"
+        commands:
+          - dbt build
+
+pluginDefaults:
+  - type: io.kestra.plugin.airbyte.connections.Sync
+    values:
+      url: http://host.docker.internal:8000/
+      username: "{{ secret('AIRBYTE_USERNAME') }}"
+      password: "{{ secret('AIRBYTE_PASSWORD') }}"
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to build a production-ready ETL pipeline by combining parallel data ingestion with Airbyte and local transformations using dbt."
+#   title: Build an ETL Pipeline with Parallel Airbyte Syncs and dbt Core Transformations
+#   metaTitle: Parallel Airbyte Syncs and dbt Core Transformations
+#   description: |
+#     This blueprint demonstrates how to build a **production-ready ETL pipeline**
+#     by combining **parallel data ingestion with Airbyte** and **local
+#     transformations using dbt Core**.
+# 
+#     It performs the following actions:
+# 
+#     - Runs multiple Airbyte syncs in parallel to ingest data from SaaS sources
+#       such as Salesforce, Google Analytics, and advertising platforms.
+#     - Waits for all ingestion jobs to complete before starting transformations.
+#     - Clones a dbt project repository and executes dbt Core CLI commands in a
+#       containerized environment.
+#     - Transforms raw ingested data into analytics-ready tables in a cloud data
+#       warehouse.
+# 
+#     This pattern is designed for **analytics engineering teams** and **data
+#     platform teams** running **self-hosted Airbyte** who want full control over
+#     ingestion and transformation without relying on managed services.
+# 
+#     Configuration:
+#       - Configure Airbyte server access (URL, username, password) as secrets.
+#       - Set the Airbyte `connectionId` values to match your Airbyte workspace.
+#       - Provide cloud warehouse credentials (for example, a GCP service account
+#         for BigQuery) as secrets.
+#       - Customize the dbt project repository, profiles, dataset, and execution
+#         settings to fit your analytics environment.
+#       - Optionally schedule or trigger this ETL pipeline to support dashboards,
+#         reporting, or downstream data products.
+# 
+#     By orchestrating parallel ingestion and transformations in a single
+#     automation, this blueprint ensures **fresh, consistent, and analytics-ready
+#     data** for modern BI and reporting workloads.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Build an ETL pipeline using parallel Airbyte syncs and dbt Core. Ingest data
+#     at scale and transform it into analytics-ready tables for modern data
+#     platforms.

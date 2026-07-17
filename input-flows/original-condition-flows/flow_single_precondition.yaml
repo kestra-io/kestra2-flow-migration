@@ -1,0 +1,17 @@
+id: flow_single_precondition
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered after extract completed successfully!
+
+triggers:
+  - id: after_extract
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: flows
+      flows:
+        - namespace: company.team
+          flowId: extract
+          states: [SUCCESS]

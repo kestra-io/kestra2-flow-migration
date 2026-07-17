@@ -1,0 +1,23 @@
+id: flow_multiple_preconditions_deadline
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered after staging flows completed by deadline!
+
+triggers:
+  - id: after_staging
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: staging_deps
+      timeWindow:
+        type: DAILY_TIME_DEADLINE
+        deadline: "09:00:00"
+      flows:
+        - namespace: company.team
+          flowId: stg_sales
+          states: [SUCCESS]
+        - namespace: company.team
+          flowId: stg_marketing
+          states: [SUCCESS]

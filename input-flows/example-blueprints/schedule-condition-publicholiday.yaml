@@ -1,0 +1,34 @@
+id: schedule-condition-publicholiday
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Demo for PublicHoliday condition 
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.PublicHoliday
+        country: FR
+
+# extend:
+#   shortDescription: "This trigger executes the flow at 11am every day with the schedule condition that the trigger date should fall on a public holiday of France, i.e."
+#   title: Executes flow on schedule trigger with PublicHoliday condition
+#   metaTitle: Executes flow on schedule trigger with PublicHoliday
+#   description: |
+#     This trigger executes the flow at 11am every day with the schedule condition that the 
+#     trigger date should fall on a public holiday of France, i.e. the flow will execute only 
+#     on public holidays in France.
+# 
+#     With the PublicHoliday condition, you can enforce the condition for the flow to execute 
+#     only on public holidays for a specific country. The PublicHoliday condition uses the 
+#     [Jollyday](https://github.com/focus-shift/jollyday) library for public holiday calendar 
+#     that supports more than 70 countries.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Skip workflow executions on public holidays using Kestra's PublicHoliday schedule condition. Automate business-aware scheduling across countries and regions.

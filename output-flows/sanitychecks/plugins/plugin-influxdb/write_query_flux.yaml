@@ -1,0 +1,51 @@
+id: write_test
+namespace: sanitychecks.plugin-influxdb
+
+inputs:
+  - id: cs
+    type: STRING
+    defaults: "http://localhost:8086"
+
+  - id: token
+    type: STRING
+    defaults: "my-token"
+
+  - id: org
+    type: STRING
+    defaults: "my-org"
+
+  - id: bucket
+    type: STRING
+    defaults: "test-bucket"
+
+tasks:
+  - id: write
+    type: io.kestra.plugin.influxdb.Write
+    connection:
+      url: "{{ inputs.url }}"
+      token: "{{ inputs.token }}"
+    org: "{{ inputs.org }}"
+    bucket: "{{ inputs.bucket }}"
+    source: |
+      air,sensor_id=TLM0100 temperature=73.97
+      air,sensor_id=TLM0100 humidity=35.23
+      air,sensor_id=TLM0100 co=0.48
+
+  - id: query
+    type: io.kestra.plugin.influxdb.FluxQuery
+    connection:
+      url: http://localhost:8086
+      token: my-token
+    org: my-org
+    query: |
+      from(bucket: "test-bucket")
+      |> range(start: -1h)
+      |> filter(fn: (r) => r._measurement == "air")
+      |> filter(fn: (r) => r.sensor_id == "TLM0100")
+
+  - id: assert
+    type: io.kestra.plugin.core.execution.Assert
+    errorMessage: "Query didn't return 3 expected points"
+    conditions:
+      - "{{ outputs.query.rows | length == 3 }}"
+

@@ -1,0 +1,90 @@
+id: ai-check-weather-gemini
+namespace: company.team
+
+tasks:
+  - id: ask_ai
+    type: io.kestra.plugin.gemini.StructuredOutputCompletion
+    apiKey: "{{ secret('GEMINI_API_KEY') }}"
+    model: "gemini-2.5-flash-preview-05-20"
+    prompt: "I like to go sailing when the wind is above 10 knots but below 30 knots. I sail in Cambridgeshire. If the wind is within that range, I want to know if I should go sailing or not. Also tell me the current wind speed speeds"
+    jsonResponseSchema: |
+      {
+        "type": "object",
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "wind": {
+              "type": "number"
+            },
+            "go_sailing": {
+              "type": "boolean"
+            }
+          }
+        } 
+      }
+
+  - id: if
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.ask_ai['predictions'] | first | jq('.go_sailing') | first }}"
+    then:
+      - id: notify_me
+        type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
+        url: "{{ secret('SLACK_WEBHOOK') }}"
+        messageText: "{{ outputs.ask_ai['predictions'] | first | jq('.content') | first }}"
+      - id: block_calendar
+        type: io.kestra.plugin.googleworkspace.calendar.InsertEvent
+        calendarId: "{{ secret('CALENDAR_ID') }}"
+        serviceAccount: "{{ secret('GOOGLE_SA') }}"
+        summary: Out of office
+        description: "Gone sailing because the wind is {{ outputs.ask_ai['predictions'] | first | jq('.wind') | first }} knots"
+        startTime:
+          dateTime: "{{ now() | date(\"yyyy-MM-dd'T'09:00:00+01:00\") }}"
+          timeZone: "Europe/London"
+        endTime:
+          dateTime: "{{ now() | date(\"yyyy-MM-dd'T'18:00:00+01:00\") }}"
+          timeZone: "Europe/London"
+        creator:
+          email: wrussell@kestra.io
+
+triggers:
+  - id: check_daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "* 8 * * *"
+    disabled: true
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to use AI-powered decision making to evaluate real-time weather conditions and automatically trigger follow-up actions based on."
+#   title: Decide When to Take Action Using AI, Check Real-Time Weather and Trigger Automations
+#   metaTitle: Check Real-Time Weather with Gemini AI
+#   description: |
+#     This blueprint demonstrates how to use **AI-powered decision making** to
+#     evaluate **real-time weather conditions** and automatically trigger
+#     follow-up actions based on structured, machine-readable results.
+# 
+#     It shows how to:
+# 
+#     1. Ask an AI model a natural-language question that requires real-time
+#        weather data (such as current wind speed for a specific location).
+#     2. Use **structured AI output** to return both raw data (wind speed) and a
+#        clear boolean decision (for example, whether conditions are suitable for
+#        an activity).
+#     3. Apply conditional logic to execute actions only when AI-defined criteria
+#        are met.
+#     4. Send notifications when conditions are favorable.
+#     5. Automatically block time on a calendar to reflect real-world decisions
+#        triggered by AI.
+# 
+#     This pattern is useful for **personal automation**, **decision support
+#     systems**, **smart assistants**, and **context-aware workflows** where
+#     actions depend on external conditions such as weather, availability, or
+#     environmental signals.
+# 
+#     By combining real-time data access with structured AI reasoning, this
+#     approach enables reliable, automated decisions without manual checks or
+#     brittle rule-based logic.
+#   tags:
+#     - AI
+#   ee: false
+#   demo: false
+#   metaDescription: Use Kestra and Google Gemini AI to check real-time weather data and automatically trigger downstream automations based on AI-driven decisions.

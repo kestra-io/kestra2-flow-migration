@@ -1,0 +1,65 @@
+id: dbt-duckdb
+namespace: company.team
+
+tasks:
+  - id: dbt
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-example
+        branch: main
+
+      - id: dbt_build
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: ghcr.io/kestra-io/dbt-duckdb:latest
+        commands:
+          - dbt deps
+          - dbt build
+        profiles: |
+          my_dbt_project:
+            outputs:
+              dev:
+                type: duckdb
+                path: ":memory:"
+                fixed_retries: 1
+                threads: 16
+                timeout_seconds: 300
+            target: dev
+
+# extend:
+#   shortDescription: "This workflow runs dbt Core transformations on DuckDB directly from a Git repository, enabling fast, local, and fully reproducible analytics ELT pipelines."
+#   title: Run dbt transformations on DuckDB from Git for local analytics and ELT
+#   metaTitle: Run dbt Transformations on DuckDB from Git
+#   description: |
+#     This workflow runs **dbt Core transformations on DuckDB directly from a Git repository**,
+#     enabling fast, local, and fully reproducible analytics ELT pipelines.
+# 
+#     The flow performs the following actions:
+#       - Clones a dbt project from a Git repository
+#       - Runs dbt inside a lightweight DuckDB container
+#       - Resolves dbt dependencies (`dbt deps`)
+#       - Executes a full dbt build (`dbt build`) against DuckDB
+#       - Materializes models in an in-memory DuckDB database
+# 
+#     This pattern is ideal for:
+#       - Local analytics and development workflows
+#       - Prototyping dbt models without cloud infrastructure
+#       - Fast CI pipelines for dbt projects
+#       - Embedded analytics and lightweight data transformations
+#       - Teams evaluating dbt or DuckDB before moving to a cloud warehouse
+# 
+#     By combining dbt with DuckDB, this workflow delivers **zero-infrastructure analytics**:
+#     no external database, no credentials, and no setup beyond Git and Docker — while
+#     keeping dbt projects fully versioned and portable.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: true
+#   metaDescription: |
+#     Run dbt Core transformations on DuckDB from Git to build analytics models locally
+#     using a fast, lightweight, and infrastructure-free ELT workflow.
+# 

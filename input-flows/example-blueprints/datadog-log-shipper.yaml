@@ -1,0 +1,54 @@
+id: datadog-log-shipper
+namespace: company.team
+tasks:
+  - id: log_export
+    type: io.kestra.plugin.ee.core.log.LogShipper
+    logLevelFilter: INFO
+    batchSize: 1000
+    lookbackPeriod: P1D
+    logExporters:
+      - id: datadog
+        type: io.kestra.plugin.ee.datadog.LogExporter
+        basePath: https://http-intake.logs.datadoghq.eu
+        apiKey: "{{ secret('DATADOG_API_KEY') }}"
+
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 7 * * *" # everyday at 7am
+
+# extend:
+#   shortDescription: "This workflow continuously ships Kestra execution logs to Datadog, enabling centralized log management, monitoring, and observability across your orchestration."
+#   title: Ship Kestra execution logs to Datadog for centralized observability
+#   metaTitle: Ship Kestra execution logs to Datadog
+#   description: |
+#     This workflow continuously **ships Kestra execution logs to Datadog**,
+#     enabling centralized log management, monitoring, and observability across
+#     your orchestration platform.
+# 
+#     The flow performs the following actions on a daily schedule:
+#       - Collects Kestra logs from the backend with configurable severity filtering
+#       - Batches log entries for efficient transmission
+#       - Sends logs securely to Datadog using the Datadog HTTP log intake API
+#       - Preserves historical context using a configurable lookback window
+# 
+#     This pattern is ideal for:
+#       - Centralizing workflow execution logs in Datadog
+#       - Monitoring data pipelines, automation jobs, and system workflows
+#       - Correlating Kestra logs with infrastructure metrics and APM traces
+#       - Building dashboards and alerts for orchestration health
+#       - Supporting incident response and operational debugging
+# 
+#     By integrating Kestra with Datadog Logs, teams gain real-time visibility into
+#     workflow behavior without relying on local log storage or manual exports.
+#     The batch-based log shipper ensures efficient, scalable delivery even for
+#     high-volume execution environments.
+# 
+#   tags:
+#     - Infrastructure
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Send Kestra workflow and execution logs to Datadog for centralized log
+#     management, observability, monitoring, and alerting.

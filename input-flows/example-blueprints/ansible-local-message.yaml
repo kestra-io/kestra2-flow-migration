@@ -1,0 +1,55 @@
+id: ansible-local-message
+namespace: company.team
+
+tasks:
+  - id: ansible
+    type: io.kestra.plugin.ansible.cli.AnsibleCLI
+    inputFiles:
+      inventory.ini: |
+        [local_servers]
+        localhost1 ansible_connection=local
+      playbook.yml: |
+        ---
+        - name: Hello World Playbook
+          hosts: local_servers
+          
+          tasks:
+            - name: Print Hello World
+              debug:
+                msg: "Hello World!"
+    commands:
+      - ansible-playbook -i inventory.ini -c local playbook.yml
+
+
+# extend:
+#   shortDescription: "This beginner-friendly workflow demonstrates the fundamentals of running Ansible playbooks using Kestra, making it ideal for learning and onboarding use cases."
+#   title: Ansible 101, How to Orchestrate and Run a Simple Ansible Playbook
+#   metaTitle: Ansible 101, How to Orchestrate and Run a Simple
+#   description: |
+#     This beginner-friendly workflow demonstrates the **fundamentals of running
+#     Ansible playbooks** using Kestra, making it ideal for learning and onboarding
+#     use cases.
+# 
+#     It shows how to:
+# 
+#     1. Define an Ansible inventory inline and target local hosts using a local
+#        connection.
+#     2. Execute a simple Ansible playbook to validate orchestration and execution
+#        mechanics.
+#     3. Run Ansible tasks locally without requiring remote infrastructure or
+#        cloud resources.
+#     4. Use Kestra as an orchestration layer to trigger, observe, and manage
+#        Ansible executions.
+#     5. Build a foundation for more advanced Infrastructure as Code (IaC)
+#        workflows.
+# 
+#     This flow is perfect for **Ansible beginners**, **DevOps onboarding**,
+#     **demos**, and **proofs of concept** that introduce Ansible automation in a
+#     simple, controlled environment.
+#   tags:
+#     - Infrastructure
+#   ee: false
+#   demo: true
+#   metaDescription: |
+#     Learn Ansible basics by running a simple playbook locally with Kestra. An
+#     Ansible 101 workflow for beginners, demos, and DevOps onboarding.

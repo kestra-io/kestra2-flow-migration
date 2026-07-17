@@ -1,0 +1,48 @@
+id: download-parquet-from-databricks
+namespace: company.team
+description: >
+  This flow will download a Parquet file from Databricks File System (DBFS) to
+  Kestra's internal storage.
+
+tasks:
+  - id: download
+    type: io.kestra.plugin.databricks.dbfs.Download
+    authentication:
+      token: "{{ secret('DATABRICKS_TOKEN') }}"
+    host: "{{ secret('DATABRICKS_HOST') }}"
+    from: /Shared/myFile.parquet
+
+  - id: process_downloaded_file
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    dependencies:
+      - pandas
+    script: |
+      import pandas as pd
+
+      df = pd.read_parquet("{{ outputs.download.uri }}")
+      df.head()
+
+# extend:
+#   shortDescription: "This flow retrieves a Parquet file stored in Databricks File System (DBFS) and makes it available inside Kestra for downstream processing."
+#   title: Download a Parquet file from Databricks DBFS and process it with Python
+#   metaTitle: Download a Parquet file from Databricks DBFS
+#   description: |
+#     This flow retrieves a Parquet file stored in Databricks File System (DBFS)
+#     and makes it available inside Kestra for downstream processing.
+# 
+#     It performs two main steps:
+#     1. Downloads the Parquet file from DBFS into Kestra’s internal storage.
+#     2. Loads and inspects the dataset using a Python script running in a Docker
+#        container, making it easy to validate or transform the data with Pandas.
+# 
+#     This pattern is useful when you need to reuse Databricks-generated datasets
+#     outside of Databricks, for example in data quality checks, exploratory
+#     analysis, or additional ETL steps orchestrated by Kestra.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Download a Parquet file from Databricks DBFS into Kestra and process it with a Python script using Pandas.
+# 

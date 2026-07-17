@@ -1,0 +1,13 @@
+id: task_run_if_simple
+namespace: company.team
+
+inputs:
+  - id: run_task
+    type: BOOL
+    defaults: true
+
+tasks:
+  - id: conditional_task
+    type: io.kestra.plugin.core.debug.Return
+    format: "Hello World!"
+    runIf: "{{ inputs.run_task }}"

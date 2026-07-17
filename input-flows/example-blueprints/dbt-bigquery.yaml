@@ -1,0 +1,72 @@
+id: dbt-bigquery
+namespace: company.team
+
+tasks:
+  - id: git
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-example
+        branch: main
+
+      - id: dbt
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        inputFiles:
+          sa.json: "{{ secret('GCP_CREDS') }}"
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: ghcr.io/kestra-io/dbt-bigquery:latest
+        profiles: |
+          my_dbt_project:
+            outputs:
+              dev:
+                type: bigquery
+                dataset: your_big_query_dataset_name
+                project: your_big_query_project
+                keyfile: sa.json
+                location: EU
+                method: service-account
+                priority: interactive
+                threads: 16
+                timeout_seconds: 300
+                fixed_retries: 1
+            target: dev
+        commands:
+          - dbt deps
+          - dbt build
+
+# extend:
+#   shortDescription: "This workflow executes dbt models on Google BigQuery directly from a Git repository, enabling repeatable, version-controlled analytics ETL and ELT pipelines."
+#   title: Run dbt transformations on Google BigQuery from Git for analytics ETL
+#   metaTitle: Run dbt Transformations on Google BigQuery from Git
+#   description: |
+#     This workflow **executes dbt models on Google BigQuery directly from a Git repository**,
+#     enabling repeatable, version-controlled analytics ETL and ELT pipelines.
+# 
+#     The flow performs the following actions:
+#       - Clones a dbt project from a Git repository
+#       - Runs dbt inside a container with all BigQuery dependencies preinstalled
+#       - Authenticates securely using a Google Cloud service account
+#       - Executes dbt dependency resolution and full dbt build runs
+#       - Materializes analytics-ready tables and models in BigQuery
+# 
+#     This pattern is ideal for:
+#       - Analytics engineering teams running dbt on BigQuery
+#       - Production-grade ELT pipelines with Git-based workflows
+#       - Scheduled or event-driven dbt transformations
+#       - Reproducible data modeling and testing in cloud data warehouses
+#       - CI/CD-style data transformations with dbt Core
+# 
+#     By orchestrating dbt with Kestra, teams gain visibility, retries, logging,
+#     and dependency control around BigQuery transformations, while keeping dbt
+#     projects fully Git-managed and portable across environments.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Run dbt Core transformations on Google BigQuery from Git to build
+#     analytics-ready tables using a containerized, production-grade ETL workflow.
+# 

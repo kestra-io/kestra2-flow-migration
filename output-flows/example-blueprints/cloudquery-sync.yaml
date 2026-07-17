@@ -1,0 +1,93 @@
+id: cloudquery-sync
+namespace: company.team
+
+tasks:
+  - id: hn_to_duckdb
+    type: io.kestra.plugin.cloudquery.Sync
+    env:
+      CLOUDQUERY_API_KEY: "{{ kv('CLOUDQUERY_API_KEY', errorOnMissing=false) }}"
+    incremental: false
+    configs:
+      - kind: source
+        spec:
+          name: hackernews
+          path: cloudquery/hackernews
+          version: v3.0.13
+          tables:
+            - "*"
+          destinations:
+            - duckdb
+          spec:
+            item_concurrency: 100
+            start_time: "{{ trigger.date ?? execution.startDate | dateAdd(-1, 'DAYS') }}"
+      - kind: destination
+        spec:
+          name: duckdb
+          path: cloudquery/duckdb
+          version: v4.2.10
+          write_mode: overwrite-delete-stale
+          spec:
+            connection_string: hn.db
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "@daily"
+    timezone: US/Eastern
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to schedule a CloudQuery data ingestion pipeline that syncs external data sources into DuckDB for analytics, exploration, and."
+#   title: Schedule CloudQuery Data Ingestion into DuckDB for Analytics and Exploration
+#   metaTitle: Schedule CloudQuery Data Ingestion into DuckDB
+#   description: |
+#     This blueprint demonstrates how to **schedule a CloudQuery data ingestion
+#     pipeline** that syncs external data sources into **DuckDB** for analytics,
+#     exploration, and downstream processing.
+# 
+#     In this example, the automation performs a daily batch sync that:
+# 
+#     - Extracts data from the Hacker News source using CloudQuery.
+#     - Loads the data into DuckDB using the CloudQuery DuckDB destination plugin.
+#     - Supports high-throughput ingestion with configurable concurrency.
+#     - Runs on a fixed schedule using a cron trigger.
+# 
+#     The flow dynamically sets the sync start time to one day before the scheduled
+#     execution, enabling **controlled backfills** while avoiding large historical
+#     reprocessing. This makes it easy to ingest recent data in small, predictable
+#     batches.
+# 
+#     Alternatively, you can enable **incremental ingestion** by setting the
+#     `incremental` flag to `true`. In incremental mode, the sync cursor is stored
+#     automatically and reused on subsequent runs, ensuring that only new data is
+#     fetched and loaded.
+# 
+#     This pattern is ideal for:
+#       - Scheduled batch ingestion pipelines
+#       - Analytics workflows using DuckDB
+#       - Lightweight data warehousing
+#       - Backfilling time-based datasets
+#       - Replacing custom ingestion scripts with declarative configs
+# 
+#     To configure additional CloudQuery sources or destinations, visit the
+#     [CloudQuery Integrations](https://www.cloudquery.io/integrations) page. You
+#     can copy the YAML configuration for supported plugins and adapt it to your
+#     own ingestion pipelines. The documentation also provides a full list of
+#     available tables and configuration options.
+# 
+#     Premium CloudQuery plugins require an API key, which can be generated here:
+#     https://docs.cloudquery.io/docs/deployment/generate-api-key
+# 
+#     The API key should be stored securely and passed as an environment variable,
+#     for example:
+# 
+#     ```yaml
+#       - id: hn_to_duckdb
+#         type: io.kestra.plugin.cloudquery.Sync
+#         env:
+#           CLOUDQUERY_API_KEY: "{{ secret('CLOUDQUERY_API_KEY') }}"
+#     ```
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Schedule CloudQuery data ingestion into DuckDB with Kestra. Sync external data sources on a recurring basis for analytics and data lake workflows.

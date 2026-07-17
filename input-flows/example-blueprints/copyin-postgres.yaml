@@ -1,0 +1,86 @@
+id: copyin-postgres
+namespace: company.team
+
+tasks:
+  - id: download
+    type: io.kestra.plugin.core.http.Download
+    uri: https://raw.githubusercontent.com/lukes/ISO-3166-Countries-with-Regional-Codes/master/all/all.csv
+
+  - id: create_table
+    type: io.kestra.plugin.jdbc.postgresql.Query
+    url: jdbc:postgresql://sample_postgres:5433/world
+    username: postgres
+    password: postgres
+    sql: |
+      CREATE TABLE IF NOT EXISTS country_referential(
+        name VARCHAR,
+        "alpha-2" VARCHAR,
+        "alpha-3" VARCHAR,
+        "country-code" VARCHAR,
+        "iso_3166-2" VARCHAR,
+        region VARCHAR,
+        "sub-region" VARCHAR,
+        "intermediate-region" VARCHAR,
+        "region-code" VARCHAR,
+        "sub-region-code" VARCHAR,
+        "intermediate-region-code" VARCHAR
+      );
+
+  - id: copyin
+    type: io.kestra.plugin.jdbc.postgresql.CopyIn
+    url: jdbc:postgresql://sample_postgres:5433/world
+    username: postgres
+    password: postgres
+    format: CSV
+    from: "{{ outputs.download.uri }}"
+    table: country_referential
+    header: true
+  
+  - id: read
+    type: io.kestra.plugin.jdbc.postgresql.Query
+    url: jdbc:postgresql://sample_postgres:5433/world
+    username: postgres
+    password: postgres
+    sql: SELECT * FROM country_referential LIMIT 10
+    fetchType: FETCH
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to efficiently load a CSV file into a PostgreSQL table using the COPY protocol, which is the fastest and most reliable method."
+#   title: Bulk Load CSV Data into PostgreSQL Using COPY for Fast ETL Ingestion
+#   metaTitle: Bulk Load CSV Data into PostgreSQL Using COPY
+#   description: |
+#     This blueprint demonstrates how to **efficiently load a CSV file into a
+#     PostgreSQL table using the COPY protocol**, which is the fastest and most
+#     reliable method for bulk data ingestion in Postgres.
+# 
+#     The automation follows a classic ETL ingestion pattern:
+# 
+#     - Downloads a public CSV dataset from an external source.
+#     - Creates a target table in PostgreSQL if it does not already exist.
+#     - Uses the PostgreSQL `COPY` mechanism to bulk load the CSV file into the
+#       table in a single operation.
+#     - Runs a validation query to confirm that data was successfully ingested.
+# 
+#     This approach is ideal for:
+#       - Initial data loads and database seeding
+#       - Reference and lookup tables
+#       - High-volume CSV ingestion
+#       - Replacing slow row-by-row INSERT statements
+#       - Building reliable batch ETL pipelines
+# 
+#     The COPY-based ingestion method significantly outperforms traditional SQL
+#     inserts and is commonly used in production data pipelines where speed and
+#     consistency matter.
+# 
+#     This blueprint provides a reusable foundation for **PostgreSQL-centric ETL
+#     workflows**, making it easy to ingest structured CSV data into relational
+#     databases with minimal overhead.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Bulk load CSV files into PostgreSQL using the COPY protocol.
+#     Create tables and ingest large datasets efficiently for ETL and data
+#     pipeline workflows.
+# 

@@ -1,0 +1,32 @@
+id: schedule-condition-dayweek
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Demo for DayWeek condition 
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DayWeek
+        date: "{{ trigger.date }}"
+        dayOfWeek: "MONDAY"
+
+# extend:
+#   shortDescription: "This trigger starts the flow at 11am every day with the schedule condition that the trigger date is a Monday."
+#   title: Executes flow on schedule trigger with DayWeek condition
+#   metaTitle: Executes flow on schedule trigger with DayWeek
+#   description: |
+#     This trigger starts the flow at 11am every day with the schedule condition that 
+#     the trigger date is a Monday.
+# 
+#     With DayWeek condition, you can enforce the condition for the flow to run on 
+#     only a particular day of the week.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: true
+#   metaDescription: Run Kestra flows on specific days of the week using the DayWeek condition. Automate weekday or weekend-restricted workflows with precise scheduling control.

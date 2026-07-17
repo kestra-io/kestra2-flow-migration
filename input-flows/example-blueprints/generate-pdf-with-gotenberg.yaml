@@ -1,0 +1,35 @@
+id: generate-pdf-with-gotenberg
+namespace: company.team
+
+variables:
+  server: https://demo.gotenberg.dev
+  template: https://sparksuite.github.io/simple-html-invoice-template/
+
+tasks:
+  - id: pdf
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    outputFiles:
+      - myfile.pdf
+    commands:
+      - curl --request POST '{{ vars.server }}/forms/chromium/convert/url' --form 'url="{{ vars.template }}"' -o myfile.pdf
+
+# extend:
+#   shortDescription: "You can start your Gotenberg API server using the command: docker run --rm -p 3000:3000 gotenberg/gotenberg:7."
+#   title: Generate PDF files from HTML, Markdown, Word or Excel using Gotenberg
+#   metaTitle: Generate PDF files from HTML
+#   description: |
+#     You can start your Gotenberg API server using the command: `docker run --rm
+#     -p 3000:3000 gotenberg/gotenberg:7`. Replace the `server` variable below to
+#     point to your server. For development, you can test your workflow using the
+#     demo API: https://demo.gotenberg.dev. 
+#       
+#     For more information, see the [Gotenberg
+#     documentation](https://gotenberg.dev/docs/getting-started/installation).
+#   tags:
+#     - Business
+#   ee: false
+#   demo: true
+#   metaDescription: This flow will generate PDF files from HTML, Markdown, Word or
+#     Excel using Gotenberg.

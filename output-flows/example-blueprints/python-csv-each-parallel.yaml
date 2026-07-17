@@ -1,0 +1,35 @@
+id: python-csv-each-parallel
+namespace: company.team
+
+tasks:
+  - id: csv
+    type: io.kestra.plugin.core.flow.ForEach
+    concurrencyLimit: 0
+    values:
+      - https://huggingface.co/datasets/kestra/datasets/raw/main/csv/orders.csv
+      - https://huggingface.co/datasets/kestra/datasets/raw/main/csv/products.csv
+      - https://huggingface.co/datasets/kestra/datasets/raw/main/csv/salaries.csv
+    tasks:
+      - id: pandas
+        type: io.kestra.plugin.scripts.python.Script
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        dependencies:
+          - pandas
+        script: |
+          import pandas as pd
+          df = pd.read_csv("{{ taskrun.value }}")
+          df.info()
+
+# extend:
+#   shortDescription: "This flow reads a list of CSV files and processes each file in parallel in isolated Python scripts using Pandas."
+#   title: Transform data from CSV files with Pandas in Python containers (in parallel)
+#   metaTitle: Transform CSV Files with Pandas in Parallel
+#   description: This flow reads a list of CSV files and processes each file in
+#     parallel in isolated Python scripts using Pandas.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: true
+#   metaDescription: This flow reads a list of CSV files and processes each file in
+#     parallel in isolated Python scripts using Pandas.

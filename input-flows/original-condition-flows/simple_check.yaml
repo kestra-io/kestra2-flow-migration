@@ -1,0 +1,17 @@
+id: simple_check
+namespace: company.team
+
+inputs:
+  - id: name
+    type: STRING
+
+checks:
+  - message: "Sorry, this flow can only be executed with 'Kestra'"
+    condition: "{{ (inputs.name | upper) == 'KESTRA' }}"
+    style: ERROR
+    behavior: BLOCK_EXECUTION
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World! 🚀

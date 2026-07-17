@@ -1,0 +1,13 @@
+id: flow_has_retry_attempt
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered only when upstream flow had a retry attempt!
+
+triggers:
+  - id: after_flaky
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ hasRetryAttempt == true }}"

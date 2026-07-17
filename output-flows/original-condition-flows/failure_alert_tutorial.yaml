@@ -1,0 +1,17 @@
+id: failure_alert
+namespace: system
+
+tasks:
+  - id: send
+    type: io.kestra.plugin.slack.notifications.SlackExecution
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    executionId: "{{ trigger.executionId }}"
+
+triggers:
+  - id: listen
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ trigger.namespace startsWith 'company.team' }}"
+        states:
+          - FAILED
+          - WARNING

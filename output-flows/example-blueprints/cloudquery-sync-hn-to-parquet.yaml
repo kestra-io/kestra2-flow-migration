@@ -1,0 +1,73 @@
+id: cloudquery-sync-hn-to-parquet
+namespace: company.team
+
+tasks:
+  - id: hn_to_parquet
+    type: io.kestra.plugin.cloudquery.CloudQueryCLI
+    inputFiles:
+      config.yml: |
+        kind: source
+        spec:
+          name: hackernews
+          path: cloudquery/hackernews
+          version: v3.7.7
+          tables: ["*"]
+          destinations:
+            - file
+          spec:
+            item_concurrency: 100
+            start_time: "{{ execution.startDate | dateAdd(-1, 'DAYS') }}"
+        ---
+        kind: destination
+        spec:
+          name: file
+          path: cloudquery/file
+          version: v5.4.6
+          spec:
+            path: "{% raw %}{{TABLE}}/{{UUID}}.{{FORMAT}}{% endraw %}"
+            format: csv
+    outputFiles:
+      - "**/*.csv"
+    env:
+      CLOUDQUERY_API_KEY: "{{ kv('CLOUDQUERY_API_KEY', errorOnMissing=false) }}"
+    commands:
+      - cloudquery sync config.yml --log-console --log-level=warn
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to build a data ingestion pipeline that extracts data from Hacker News using CloudQuery and stores it locally as structured CSV."
+#   title: Data Ingestion Pipeline, Sync Hacker News Data to CSV Files Using CloudQuery
+#   metaTitle: Data Ingestion Pipeline
+#   description: |
+#     This blueprint demonstrates how to build a **data ingestion pipeline** that
+#     extracts data from **Hacker News** using **CloudQuery** and stores it locally
+#     as structured **CSV files** for analytics, exploration, or downstream
+#     processing.
+# 
+#     It shows how to:
+# 
+#     1. Use CloudQuery as a data extraction engine to sync data from the
+#        Hacker News API.
+#     2. Configure CloudQuery sources and destinations using inline YAML
+#        configuration files.
+#     3. Export all available Hacker News tables and persist them as CSV files
+#        on disk.
+#     4. Control ingestion parameters such as concurrency and incremental start
+#        time to efficiently sync recent data.
+#     5. Orchestrate CloudQuery ingestion jobs using Kestra for repeatable,
+#        automated data pipelines.
+# 
+#     This pattern can be easily extended to ingest data from **any CloudQuery
+#     supported source** and load it into **any supported destination**, including
+#     cloud storage, data warehouses, or analytics-ready file formats.
+# 
+#     To avoid parsing CloudQuery `TABLE` and `UUID` variables as Kestra Pebble
+#     expressions, this flow uses the `{% raw %}{{TABLE}}{% endraw %}` syntax.
+# 
+#     Make sure to replace the API key with your own CloudQuery API key as shown in
+#     this [blog
+#     post](https://kestra.io/blogs/2024-03-12-introduction-to-cloudquery#how-cloudquery-works).
+#   tags:
+#     - Infrastructure
+#   ee: false
+#   demo: false
+#   metaDescription: Extract and sync Hacker News data to CSV files using CloudQuery and Kestra. A data ingestion blueprint for analytics and downstream data pipelines.

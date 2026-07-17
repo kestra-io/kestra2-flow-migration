@@ -1,0 +1,75 @@
+id: dlt-google-analytics-to-duckdb
+namespace: company.team
+
+tasks:
+  - id: dlt_pipeline
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.11
+    beforeCommands:
+      - pip install dlt[duckdb]
+      - dlt --non-interactive init google_analytics duckdb
+    env:
+      SOURCES__GOOGLE_ANALYTICS__CREDENTIALS__PROJECT_ID: "{{ secret('GOOGLE_ANALYTICS_PROJECT_ID') }}"
+      SOURCES__GOOGLE_ANALYTICS__CREDENTIALS__CLIENT_EMAIL: "{{ secret('GOOGLE_ANALYTICS_CLIENT_EMAIL') }}"
+      SOURCES__GOOGLE_ANALYTICS__CREDENTIALS__PRIVATE_KEY: "{{ secret('GOOGLE_ANALYTICS_PRIVATE_KEY') }}"
+      SOURCES__GOOGLE_ANALYTICS__PROPERTY_ID: "{{ secret('GOOGLE_ANALYTICS_PROPERTY_ID') }}"
+    script: |
+      import dlt
+      from google_analytics import google_analytics
+
+      QUERIES = [
+          {
+              "resource_name": "sample_analytics_data1",
+              "dimensions": ["browser", "city"],
+              "metrics": ["totalUsers", "transactions"],
+          },
+          {
+              "resource_name": "sample_analytics_data2",
+              "dimensions": ["browser", "city", "dateHour"],
+              "metrics": ["totalUsers"],
+          },
+      ]
+
+      pipeline = dlt.pipeline(
+          pipeline_name="google_analytics_pipeline",
+          destination="duckdb",
+          dataset_name="google_analytics",
+      )
+
+      load_info = pipeline.run(google_analytics(queries=QUERIES))
+
+# extend:
+#   shortDescription: "Create a production-ready ELT pipeline in Python that pulls analytics data from Google Analytics (GA4) and loads it into DuckDB using dlt (data load tool)."
+#   title: Build a Python ELT pipeline to extract Google Analytics data and load it into DuckDB with dlt
+#   metaTitle: Build a Python ELT Pipeline
+#   description: |
+#     Create a **production-ready ELT pipeline in Python** that pulls analytics data from **Google Analytics (GA4)** and loads it into **DuckDB** using **dlt (data load tool)**.
+# 
+#     **What this automation does:**
+#     - Authenticates to the Google Analytics API using service account credentials.
+#     - Executes multiple analytics queries (dimensions and metrics) in a single run.
+#     - Automatically normalizes and loads the API responses into DuckDB tables.
+#     - Stores the resulting dataset locally for fast SQL analytics and exploration.
+# 
+#     **Why use dlt for Google Analytics ingestion:**
+#     - dlt handles pagination, schema inference, and table creation automatically.
+#     - Queries are defined declaratively in Python, making the pipeline easy to extend.
+#     - DuckDB provides a lightweight, zero-infrastructure analytics database ideal for ELT workflows.
+# 
+#     **Implementation details:**
+#     - The pipeline is fully implemented in a single Python script.
+#     - The `dlt init google_analytics duckdb` command bootstraps the source and destination.
+#     - Credentials and property identifiers are injected securely via environment variables.
+# 
+#     **Use cases:**
+#     - Local analytics and reporting
+#     - Prototyping data models before moving to a warehouse
+#     - Replacing manual GA exports with automated ingestion
+#     - Building reproducible ELT pipelines in pure Python
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Build a Python ELT pipeline with Kestra and dlt. Extract Google Analytics data via API and load it into DuckDB for scheduled reporting and analysis.

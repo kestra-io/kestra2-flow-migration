@@ -1,0 +1,88 @@
+id: azure-blob-to-bigquery
+namespace: company.team
+
+tasks:
+  - id: each
+    type: io.kestra.plugin.core.flow.ForEach
+    concurrencyLimit: 0
+    values: "{{ trigger.blobs | jq('.[].uri') }}"
+    tasks:
+      - id: upload_from_file
+        type: io.kestra.plugin.gcp.bigquery.Load
+        destinationTable: gcpProject.dataset.table
+        from: "{{ taskrun.value }}"
+        writeDisposition: WRITE_APPEND
+        projectId: yourGcpProject
+        serviceAccount: "{{ secret('GCP_CREDS') }}"
+        ignoreUnknownValues: true
+        autodetect: true
+        format: CSV
+        csvOptions:
+          allowJaggedRows: true
+          encoding: UTF-8
+          fieldDelimiter: ","
+
+  - id: dbt_cloud_job
+    type: io.kestra.plugin.dbt.cloud.TriggerRun
+    accountId: "{{ secret('DBT_CLOUD_ACCOUNT_ID') }}"
+    token: "{{ secret('DBT_CLOUD_API_TOKEN') }}"
+    jobId: "366381"
+    wait: true
+
+triggers:
+  - id: watch
+    type: io.kestra.plugin.azure.storage.blob.Trigger
+    interval: PT30S
+    endpoint: https://kestra.blob.core.windows.net
+    connectionString: "{{ secret('AZURE_CONNECTION_STRING') }}"
+    container: stage
+    prefix: marketplace/
+    action: MOVE
+    moveTo:
+      container: stage
+      name: archive/marketplace/
+
+# extend:
+#   shortDescription: "This blueprint implements an event-driven, cross-cloud ETL pipeline that automatically loads data from Azure Blob Storage into Google BigQuery, then runs."
+#   title: Automate Cross-Cloud ETL from Azure Blob Storage to BigQuery with dbt Cloud
+#   metaTitle: Automate Cross-Cloud ETL from Azure Blob Storage
+#   description: |
+#     This blueprint implements an **event-driven, cross-cloud ETL pipeline**
+#     that automatically loads data from **Azure Blob Storage into Google
+#     BigQuery**, then runs transformations using **dbt Cloud**.
+# 
+#     The workflow operates as follows:
+# 
+#     - Watches an Azure Blob Storage container for newly uploaded files.
+#     - Automatically detects and processes incoming CSV files.
+#     - Loads each file into BigQuery using schema autodetection and append mode.
+#     - Handles multiple files in parallel for high-throughput ingestion.
+#     - Triggers a dbt Cloud job to transform raw data into analytics-ready tables.
+#     - Waits for dbt execution to complete and exposes model and test execution
+#       details for observability.
+# 
+#     This pattern is ideal for:
+#       - Cross-cloud data ingestion pipelines
+#       - Azure-to-GCP data migration
+#       - Event-driven ETL and ELT workflows
+#       - Analytics and data warehouse automation
+#       - Modern data stacks combining BigQuery and dbt
+# 
+#     The Azure trigger automatically archives processed files to prevent
+#     duplicate ingestion and maintain a clean staging area.
+# 
+#     Configuration:
+#       - Store Azure connection strings, GCP service account credentials, and
+#         dbt Cloud API tokens securely as secrets.
+#       - Adjust the destination BigQuery table and dataset as needed.
+#       - Tune parallelism to control ingestion throughput.
+#       - Replace the dbt Cloud job ID with your own transformation pipeline.
+# 
+#     This blueprint provides a production-ready foundation for **automated,
+#     cross-cloud ETL pipelines** connecting Azure storage, BigQuery, and dbt
+#     Cloud.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Build a cross-cloud ETL pipeline from Azure Blob Storage to Google BigQuery with Kestra. Automatically ingest files and load them into analytics-ready tables.

@@ -1,0 +1,47 @@
+id: json-from-api-to-mongodb
+namespace: company.team
+
+tasks:
+  - id: generate_json
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    outputFiles:
+      - output.json
+    dependencies:
+      - requests
+      - kestra
+    script: |
+      import requests
+      import json
+      from kestra import Kestra
+
+      response = requests.get("https://api.github.com")
+      data = response.json()
+
+      with open("output.json", "w") as output_file:
+          json.dump(data, output_file)
+
+      Kestra.outputs({'data': data, 'status': response.status_code})
+
+  - id: load_to_mongodb
+    type: io.kestra.plugin.mongodb.Load
+    connection:
+      uri: mongodb://host.docker.internal:27017/
+    database: local
+    collection: github
+    from: "{{ outputs.generate_json.outputFiles['output.json'] }}"
+
+# extend:
+#   shortDescription: "This flow will scrape GitHub API in a Python task running in a Docker container, and will output the result to a JSON file."
+#   title: Scrape API in a Python task running in a Docker container and load the
+#   metaTitle: Scrape an API in Python Docker and Load JSON
+#     JSON document to a MongoDB collection
+#   description: This flow will scrape GitHub API in a Python task running in a
+#     Docker container, and will output the result to a JSON file. That JSON API
+#     payload is then loaded to a MongoDB collection.
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Scrape a GitHub API response in a Python Docker container and load the JSON data into a MongoDB collection with Kestra.

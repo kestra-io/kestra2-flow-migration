@@ -1,0 +1,48 @@
+id: all_influxdb
+namespace: sanitychecks.plugin-influxdb
+
+tasks:
+  - id: init
+    type: io.kestra.plugin.core.output.OutputValues
+    values:
+      randomPort: "{{ randomPort() }}"
+
+  - id: dockerStart
+    type: io.kestra.plugin.docker.Run
+    containerImage: influxdb:2.7
+    env:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: root
+      DOCKER_INFLUXDB_INIT_PASSWORD: example_password
+      DOCKER_INFLUXDB_INIT_ORG: my-org
+      DOCKER_INFLUXDB_INIT_BUCKET: test-bucket
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: my-token
+    portBindings:
+      - "{{ outputs.init.values.randomPort }}:8086"
+    wait: false
+
+  - id: sleep
+    type: io.kestra.plugin.core.flow.Sleep
+    duration: PT10S
+
+  - id: runSubflows
+    type: io.kestra.plugin.core.flow.ForEach
+    values: ["write_query_flux", "write_query_influxql", "load"]
+    concurrencyLimit: 0
+    tasks:
+      - id: call_subflow
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: "{{ flow.namespace }}"
+        flowId: "{{ taskrun.value }}"
+        wait: true
+        transmitFailed: true
+        inputs:
+          url: "http://localhost:{{ outputs.init.values.randomPort }}"
+          token: my-token
+          org: my-org
+          bucket: test-bucket
+
+finally:
+  - id: stop_docker
+    type: io.kestra.plugin.docker.Stop
+    containerId: "{{ outputs.dockerStart.taskRunner.containerId }}"

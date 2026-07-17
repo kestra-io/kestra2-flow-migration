@@ -1,0 +1,22 @@
+id: flow_preconditions_where
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered by matching namespace and label filter!
+
+triggers:
+  - id: listen
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: my_filter
+      where:
+        - id: flow1
+          filters:
+            - field: NAMESPACE
+              type: STARTS_WITH
+              value: io.kestra.tests
+            - field: EXPRESSION
+              type: IS_TRUE
+              value: "{{ labels.some == 'label' }}"

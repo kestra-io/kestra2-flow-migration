@@ -1,0 +1,77 @@
+id: business-processes
+namespace: tutorial
+labels:
+  name: Business Processes
+
+inputs:
+  - id: request.name
+    type: STRING
+    defaults: Rick Astley
+
+  - id: request.start_date
+    type: DATE
+    defaults: 2024-07-01
+
+  - id: request.end_date
+    type: DATE
+    defaults: 2024-07-07
+
+  - id: slack_webhook_uri
+    type: URI
+    defaults: https://kestra.io/api/mock
+
+tasks:
+  - id: send_approval_request
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
+    description: Send a Slack message requesting approval for the vacation.
+    url: "{{ inputs.slack_webhook_uri }}"
+    messageText: "Validate holiday request for {{ inputs.request.name }}. To approve the request, click on the `Resume` button here http://localhost:8080/ui/executions/{{flow.namespace}}/{{flow.id}}/{{execution.id}}"
+
+  - id: wait_for_approval
+    type: io.kestra.plugin.core.flow.Pause
+    description: Pause the flow while waiting for manual approval.
+    pauseDuration: PT30S
+
+  - id: process_request
+    type: io.kestra.plugin.core.http.Request
+    description: Submit the approved vacation request to the API.
+    uri: https://kestra.io/api/mock
+    method: POST
+    contentType: application/json
+    body: "{{ inputs.request }}"
+
+description: |
+  **Use case:** Vacation approval workflow that mixes human validation with automated follow-up.
+  **Highlights:**
+  - Collect request details (name and dates) via generated form inputs.
+  - Notify approvers in Slack with a link to resume the execution.
+  - Pause the flow until a user clicks `Resume` in the Kestra UI.
+  - Submit the approved vacation request to the API once approval is granted.
+
+# extend:
+#   shortDescription: "This flow is a simple example of a business process automation use case for vacation approval."
+#   title: Getting started with Kestra — a Business Processes workflow example
+#   metaTitle: Getting started with Kestra
+#   description: |
+#     This flow is a simple example of a business process automation use case for
+#     vacation approval.
+# 
+#     The user first submits a vacation request using a form automatically created
+#     in the Kestra UI thanks to inputs. The flow then sends a Slack message to
+#     request approval for a vacation, waits for the approval, and then processes
+#     the request. The approval is as simple as clicking on the `Resume` button in
+#     the Kestra UI.
+# 
+#     The flow has three tasks:
+#     1. The first task sends a Slack message to request approval for a vacation.
+#     2. The second task pauses the execution to wait for the approval.
+#     3. Once the execution is resumed, the third task processes the vacation
+#     request.
+#   tags:
+#     - Getting Started
+#     - Business
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: This flow is a simple example of a business process automation
+#     use case for vacation approval.

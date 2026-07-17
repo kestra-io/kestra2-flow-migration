@@ -1,0 +1,58 @@
+id: sendgrid-notify-on-failure
+namespace: company.team
+
+tasks:
+  - id: send_email_notification
+    type: io.kestra.plugin.twilio.sendgrid.SendGridMailExecution
+    to:
+      - hello@kestra.io
+    from: hello@kestra.io
+    subject: "Kestra Workflow Failure: {{ trigger.executionId }} has failed on {{
+      taskrun.startDate }}"
+    sendgridApiKey: "{{ secret('SENDGRID_API_KEY') }}"
+    executionId: "{{ trigger.executionId }}"
+
+triggers:
+  - id: on_failure
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ trigger.namespace startsWith 'company' }}"
+        states:
+          - FAILED
+          - WARNING
+
+# extend:
+#   shortDescription: "This system flow will send a SendGrid email notification anytime a workflow in a company namespace (or any nested child namespace) fails."
+#   title: Send a SendGrid email notification when a workflow fails
+#   metaTitle: Send a SendGrid email notification when a workflow
+#   description: |
+#     This system flow will send a SendGrid email notification anytime a workflow
+#     in a `company` namespace (or any nested child namespace) fails. 
+# 
+#     Using this pattern, you can send email notifications for Kestra workflow
+#     execution failures alongside other notifications.
+# 
+#     You can customize that system flow by modifying the task, adding more tasks
+#     to the flow or adjusting the trigger conditions. Read more about that
+#     pattern in the [Administrator Guide](https://kestra.io/docs/administrator-guide/monitoring).
+# 
+#     Let's create a flow in the namespace with prefix `company` that will always fail.
+# 
+#     ```yaml
+#     id: failure_flow
+#     namespace: company.team
+# 
+#     tasks:
+#       - id: always_fails
+#         type: io.kestra.plugin.core.execution.Fail
+#     ```
+# 
+#     Whenever you run the `failure_flow`, it will trigger an execution of the
+#     `sendgrid-notify-on-failure` flow. As a result, an email notification will
+#     be created using SendGrid so that prompt action can be taken.
+#   tags:
+#     - Infrastructure
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Send a SendGrid email when a Kestra workflow fails. Automate failure notifications to alert your team of pipeline issues via email in real time.

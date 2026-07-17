@@ -1,0 +1,64 @@
+id: databricks-sql
+namespace: company.team
+description: |
+  This flow demonstrates how to run a SQL query on a Databricks lakehouse.
+
+tasks:
+  - id: sql_query
+    type: io.kestra.plugin.databricks.sql.Query
+    accessToken: "{{ secret('DATABRICKS_TOKEN') }}"
+    host: "{{ secret('DATABRICKS_HOST') }}"
+    httpPath: sql/protocolv1/o/3497567377305430/0713-130754-9oa8zceh
+    sql: SELECT * FROM samples.nyctaxi.trips LIMIT 100;
+
+  - id: csv
+    type: io.kestra.plugin.serdes.csv.IonToCsv
+    from: "{{ outputs.sql_query.uri }}"
+
+  - id: pandas
+    type: io.kestra.plugin.scripts.python.Script
+    dependencies:
+      - pandas
+    script: |
+      import pandas as pd
+
+      df = pd.read_csv("{{ outputs.csv.uri }}")
+      df.head()
+
+# extend:
+#   shortDescription: "This workflow executes a Databricks SQL query against a lakehouse table, exports the query results to CSV, and processes the data in Python using Pandas."
+#   title: Query Databricks SQL and process lakehouse data with Python and Pandas
+#   metaTitle: Query Databricks SQL and process lakehouse data
+#   description: |
+#     This workflow executes a **Databricks SQL query** against a lakehouse table,
+#     exports the query results to CSV, and processes the data in Python using Pandas.
+# 
+#     The flow performs the following actions:
+#       - Runs a SQL query on Databricks using the Databricks SQL connector
+#       - Exports query results from the lakehouse into a CSV file
+#       - Loads the CSV output into a Python environment
+#       - Uses Pandas to inspect, analyze, or transform the data
+# 
+#     This pattern is ideal for:
+#       - Databricks lakehouse analytics pipelines
+#       - Extracting data from Databricks for downstream processing
+#       - Bridging SQL-based analytics with Python data science workflows
+#       - Prototyping transformations before production ETL or ELT jobs
+#       - Operational analytics and ad-hoc reporting on Databricks data
+# 
+#     By separating query execution from Python processing, this workflow enables
+#     clear ownership between analytics engineers (SQL) and data scientists
+#     (Python), while keeping the pipeline fully automated and reproducible.
+# 
+#     The Databricks SQL connector handles authentication, query execution, and
+#     result retrieval, allowing teams to integrate Databricks lakehouse data into
+#     broader analytics and orchestration workflows without manual exports.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Run Databricks SQL queries, export lakehouse data to CSV, and analyze results
+#     in Python with Pandas as part of an automated analytics and ETL workflow.
+# 

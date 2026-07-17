@@ -1,0 +1,17 @@
+id: flow_execution_labels
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered after a production-labeled execution succeeded!
+
+triggers:
+  - id: after_prod
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionStatus
+        in: [SUCCESS]
+      - type: io.kestra.plugin.core.condition.ExecutionLabels
+        labels:
+          env: production

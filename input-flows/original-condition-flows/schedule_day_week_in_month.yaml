@@ -1,0 +1,17 @@
+id: first_monday_schedule
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: This will execute only on the first Monday of every month!
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * 1"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DayWeekInMonth
+        date: "{{ trigger.date }}"
+        dayOfWeek: "MONDAY"
+        dayInMonth: "FIRST"

@@ -1,0 +1,62 @@
+id: dbt-redshift
+namespace: company.team
+
+tasks:
+  - id: git
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-example
+        branch: main
+
+      - id: dbt
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: ghcr.io/kestra-io/dbt-redshift:latest
+        profiles: |
+          my_dbt_project:
+            outputs:
+              dev:
+                type: redshift
+                host: myhostname.us-east-1.redshift.amazonaws.com
+                user: "{{ secret('REDSHIFT_USER') }}"
+                password: "{{ secret('REDSHIFT_PASSWORD') }}"
+                port: 5439
+                dbname: analytics
+                schema: dbt
+                autocommit: true # autocommit after each statement
+                threads: 8
+                connect_timeout: 10
+            target: dev
+        commands:
+          - dbt deps
+          - dbt build
+
+# extend:
+#   shortDescription: "This workflow runs dbt against an Amazon Redshift data warehouse by pulling a dbt project from Git and executing it inside a Docker container."
+#   title: Run dbt models on Amazon Redshift directly from a Git repository
+#   metaTitle: Run dbt Models on Amazon Redshift from Git
+#   description: |
+#     This workflow runs dbt against an Amazon Redshift data warehouse by pulling
+#     a dbt project from Git and executing it inside a Docker container.
+# 
+#     It’s a simple and reliable way to:
+#       - Keep dbt projects version-controlled in Git
+#       - Run `dbt deps` and `dbt build` without managing local environments
+#       - Execute transformations directly on Redshift using standard dbt profiles
+#       - Reuse the same setup across development, staging, and production
+# 
+#     All Redshift connection details are defined in the dbt profile and injected
+#     securely via secrets, so credentials never live in the repository.
+# 
+#     This pattern works well for analytics engineering teams who want a clean,
+#     repeatable way to run dbt on Amazon Redshift, whether on a schedule, as part
+#     of CI/CD, or triggered by upstream data pipelines.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Run dbt ELT pipelines on Amazon Redshift from Git using Docker and Kestra. Execute dbt deps and dbt build to transform data in your Redshift warehouse.

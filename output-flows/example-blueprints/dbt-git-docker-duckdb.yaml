@@ -1,0 +1,73 @@
+id: dbt-git-docker-duckdb
+namespace: company.team
+
+tasks:
+  - id: dbt
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-demo
+        branch: main
+
+      - id: dbt_core
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: ghcr.io/kestra-io/dbt-duckdb:latest
+        inputFiles:
+          packages.yml: |
+            packages:
+              - package: brooklyn-data/dbt_artifacts
+                version: 2.10.0
+
+        profiles: |
+          jaffle_shop:
+            outputs:
+              dev:
+                type: duckdb
+                path: ":memory:"
+                extensions:
+                  - parquet
+                fixed_retries: 1
+                threads: 16
+                timeout_seconds: 300
+            target: dev
+
+        commands:
+          - dbt deps
+          - dbt build
+
+
+# extend:
+#   shortDescription: "This workflow executes a complete dbt ELT pipeline on DuckDB directly from Git using a single Docker container, ensuring fast execution, low overhead, and."
+#   title: Run dbt ELT pipelines with DuckDB from Git using Docker
+#   metaTitle: Run dbt ELT pipelines with DuckDB from Git
+#   description: |
+#     This workflow executes a **complete dbt ELT pipeline on DuckDB directly from Git**
+#     using a **single Docker container**, ensuring fast execution, low overhead,
+#     and fully reproducible analytics builds.
+# 
+#     The flow performs the following actions:
+#       - Clones a dbt project from a Git repository
+#       - Installs dbt packages (including dbt_artifacts) via `dbt deps`
+#       - Runs a full dbt build (`dbt build`) inside a DuckDB container
+#       - Materializes models in an in-memory DuckDB database
+#       - Executes all dbt commands in a single container to minimize startup latency
+# 
+#     This pattern is particularly well-suited for:
+#       - Local-first analytics and ELT workflows
+#       - dbt CI pipelines and pull-request validation
+#       - Fast dbt experimentation without cloud warehouses
+#       - Embedded analytics and lightweight data modeling
+#       - Teams using DuckDB for development before deploying to BigQuery, Snowflake, or Redshift
+# 
+#     Running all dbt commands in one container improves performance and consistency,
+#     while Git-based versioning ensures reproducibility across environments.
+#     No external database or infrastructure is required beyond Docker.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: true
+#   metaDescription: Run dbt ELT pipelines on DuckDB from a Git repository using Docker and Kestra. Execute dbt deps and dbt build in a single containerized workflow.

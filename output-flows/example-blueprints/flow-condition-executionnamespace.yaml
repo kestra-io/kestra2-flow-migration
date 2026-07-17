@@ -1,0 +1,41 @@
+id: flow-condition-executionnamespace
+namespace: company.team
+
+tasks:
+  - id: send_slack_message
+    type: io.kestra.plugin.slack.notifications.SlackExecution
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    executionId: "{{ trigger.executionId }}"
+    payload: "The workflow execution {{ trigger.executionId }} failed for the flow {{ trigger.flowId }} in the namespace {{ trigger.namespace }}"
+
+triggers:
+  - id: flow
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ trigger.namespace startsWith 'company.engineering' }}"
+        states:
+          - FAILED
+
+# extend:
+#   shortDescription: "This flow trigger executes the flow based on the ExecutionNamespace condition."
+#   title: Executes flow on flow trigger with ExecutionNamespace condition
+#   metaTitle: Executes flow on flow trigger
+#   description: |
+#     This flow trigger executes the flow based on the ExecutionNamespace condition. 
+#     When any flow within the namespace as specified under the `namespace` in the 
+#     ExecutionNamespace condition enters into the state specified under the `states` 
+#     attribute of the Flow trigger, this flow will get triggered.
+# 
+#     In this case, when any flow within namespace having prefix (as `comparison` 
+#     attribute is set to `PREFIX`) `company.engineering` enters the `FAILED` state as 
+#     defined in the `states` attribute, this flow will get triggered. This flow will send
+#     a slack message about the flow execution that has failed, and in turn resulted in 
+#     the triggering of this flow.
+# 
+#     With ExecutionNamespace condition, you can enforce the condition on flow trigger that 
+#     is based on the namespace of another flow.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Trigger Kestra flows based on execution namespace using the ExecutionNamespace condition. Automate cross-namespace workflow dependencies at scale.

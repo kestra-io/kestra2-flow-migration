@@ -1,0 +1,36 @@
+id: guarded_ingest
+namespace: company.team
+
+inputs:
+  - id: environment
+    type: SELECT
+    values: [dev, prod]
+    defaults: dev
+  - id: run_date
+    type: DATETIME
+    defaults: "{{ now() }}"
+  - id: payload_url
+    type: URI
+    defaults: https://dummyjson.com/products?limit=5
+
+checks:
+  # Block risky prod runs outside the allowed window
+  - message: "Prod runs are only allowed between 06:00 and 22:00 UTC"
+    condition: "{{ inputs.environment != 'prod' or (inputs.run_date | date('HH') | number >= 6 and inputs.run_date | date('HH') | number < 22) }}"
+    style: ERROR
+    behavior: BLOCK_EXECUTION
+
+  # Warn if the payload is not the approved source
+  - message: "Non-approved source detected. Use https://dummyjson.com when possible."
+    condition: "{{ inputs.payload_url | startsWith('https://dummyjson.com') }}"
+    style: WARNING
+    behavior: CREATE_EXECUTION
+
+tasks:
+  - id: fetch
+    type: io.kestra.plugin.core.http.Download
+    uri: "{{ inputs.payload_url }}"
+
+  - id: log_run
+    type: io.kestra.plugin.core.log.Log
+    message: "Run {{ execution.id }} in {{ inputs.environment }} with file {{ outputs.fetch.uri }}"

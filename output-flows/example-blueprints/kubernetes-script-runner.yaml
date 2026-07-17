@@ -1,0 +1,86 @@
+id: kubernetes-script-runner
+namespace: company.team
+
+tasks:
+  - id: send_data
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.ee.kubernetes.runner.Kubernetes
+      namespace: default
+      pullPolicy: ALWAYS
+      config:
+        username: "{{ secret('K8S_USERNAME') }}"
+        masterUrl: "{{ secret('MASTER_URL') }}"
+        caCertData: "{{ secret('caCertData') }}"
+        clientCertData: "{{ secret('clientCertData') }}"
+        clientKeyData: "{{ secret('clientKeyData') }}"
+      resources:
+        request:
+          cpu: 500m
+          memory: 128Mi
+    outputFiles:
+      - "*.json"
+    dependencies:
+      - kestra
+    script: |
+      import platform
+      import socket
+      import sys
+      import json
+      from kestra import Kestra
+
+      print("Hello from a Kubernetes runner!")
+
+      host = platform.node()
+      py_version = platform.python_version()
+      platform = platform.platform()
+      os_arch = f"{sys.platform}/{platform.machine()}"
+
+      def print_environment_info():
+          print(f"Host's network name: {host}")
+          print(f"Python version: {py_version}")
+          print(f"Platform info: {platform}")
+          print(f"OS/Arch: {os_arch}")
+
+          env_info = {
+              "host": host,
+              "platform": platform,
+              "os_arch": os_arch,
+              "python_version": py_version,
+          }
+          Kestra.outputs(env_info)
+
+          filename = "environment_info.json"
+          with open(filename, "w") as json_file:
+              json.dump(env_info, json_file, indent=4)
+
+      if __name__ == '__main__':
+          print_environment_info()
+
+# extend:
+#   shortDescription: "This flow contains a Python command that is executed in a Kubernetes pod. It is useful to declare resource limits and resource requests."
+#   title: Run a Python script in a Kubernetes pod
+#   metaTitle: Run a Python script in a Kubernetes pod
+#   description: |
+#     This flow contains a Python command that is executed in a Kubernetes pod. It
+#     is useful to declare resource limits and resource requests.
+# 
+#     - If your script task has `inputFiles` or `namespaceFiles` configured, an
+#     init container will be added to upload files into the main container.
+# 
+#     - If your script task has `outputFiles` configured, a sidecar container will
+#     be added to download files from the main container.
+# 
+#     All containers will use an in-memory `emptyDir` volume for file exchange.
+# 
+#     If a task is resubmitted (e.g. due to a retry or a Worker crash), the new
+#     Worker will reattach to the already running (or an already finished) pod
+#     instead of starting a new one.
+#   tags:
+#     - Core
+#     - Infrastructure
+#   ee: true
+#   demo: false
+#   metaDescription: |
+#     This flow will run a Python script in a Kubernetes pod. It
+#     is useful to declare resource limits and resource requests.

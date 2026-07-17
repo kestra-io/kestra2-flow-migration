@@ -1,0 +1,23 @@
+id: flow_scoped_outputs_before
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: "Processing date: {{ inputs.date }}"
+
+inputs:
+  - id: date
+    type: STRING
+
+triggers:
+  - id: after_extract
+    type: io.kestra.plugin.core.trigger.Flow
+    inputs:
+      date: "{{ trigger.outputs.date }}"
+    preconditions:
+      id: flows
+      flows:
+        - namespace: company.team
+          flowId: extract
+          states: [SUCCESS]

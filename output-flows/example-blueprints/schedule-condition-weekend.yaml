@@ -1,0 +1,29 @@
+id: schedule-condition-weekend
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Demo for Weekend condition 
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    when: "{{ isWeekend(trigger.date) }}"
+
+# extend:
+#   shortDescription: "This trigger executes the flow at 11am every day with the schedule condition that the trigger date should fall on a weekend, i.e."
+#   title: Executes flow on schedule trigger with Weekend condition
+#   metaTitle: Executes flow on schedule trigger with Weekend
+#   description: |
+#     This trigger executes the flow at 11am every day with the schedule condition that the 
+#     trigger date should fall on a weekend, i.e. either on a Saturday or a Sunday.
+# 
+#     With the Weenkend condition, you can enforce the condition for the flow to execute 
+#     only on a weekend.
+#   tags:
+#     - Core
+#   ee: false
+#   demo: true
+#   metaDescription: Restrict Kestra workflow executions to weekends using the Weekend condition. Automate batch jobs and reports that should only run on Saturdays and Sundays.

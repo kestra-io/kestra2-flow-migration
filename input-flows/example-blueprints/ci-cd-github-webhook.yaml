@@ -1,0 +1,88 @@
+id: ci-cd-github-webhook
+namespace: company.team
+
+inputs:
+  - id: payload
+    type: JSON
+
+tasks:
+  - id: return
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ trigger.body.pull_request.comments_url ??
+      inputs.payload.pull_request.comments_url }}"
+
+  - id: python_action
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    dependencies:
+      - requests
+    script: |
+      import requests
+      import json
+
+      url = "{{ outputs.return.value }}"
+
+      headers = {
+          'Authorization': 'token {{ secret('GITHUB_ACCESS_TOKEN') }}',
+          'Accept': 'application/vnd.github.v3+json'
+      }
+      payload = {'body': 'hello from `{{ execution.id }}` in `{{ flow.id }}`'}
+      response = requests.post(url, headers=headers, json=payload)
+
+      if response.status_code == 201:
+          print("Comment successfully created.")
+      else:
+          print(f"Failed to create comment: {response.text}")
+
+triggers:
+  - id: github
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('WEBHOOK_KEY') }}"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Expression
+        expression: "{{ trigger.body.pull_request.state == 'open' and
+          trigger.body.pull_request.comments_url }}"
+
+# extend:
+#   shortDescription: "This blueprint demonstrates how to build a production-ready CI/CD workflow using GitHub webhooks, while still enabling local and offline testing with manually."
+#   title: CI/CD with GitHub Webhooks, Process Pull Request Events and Test Locally with JSON Payloads
+#   metaTitle: Process GitHub Pull Request Webhooks and Test
+#   description: |
+#     This blueprint demonstrates how to build a **production-ready CI/CD
+#     workflow** using **GitHub webhooks**, while still enabling **local and offline
+#     testing** with manually supplied JSON payloads.
+# 
+#     It shows how to:
+# 
+#     1. Trigger workflows automatically from GitHub Pull Request events using a
+#        webhook.
+#     2. Extract and reuse data from GitHub webhook payloads, such as Pull Request
+#        metadata and API URLs.
+#     3. Perform custom CI/CD actions in response to Pull Request activity, such
+#        as posting automated comments back to GitHub.
+#     4. Seamlessly switch between live webhook data and mock JSON inputs for
+#        end-to-end local testing and debugging.
+#     5. Develop and validate CI/CD logic without relying on live GitHub events,
+#        reducing iteration time and troubleshooting complexity.
+# 
+#     The expression  
+#     `{{ trigger.body.pull_request.comments_url ?? inputs.payload.pull_request.comments_url }}`  
+#     ensures that the workflow automatically uses webhook data in production,
+#     while falling back to a manually provided JSON input during local testing.
+# 
+#     This pattern is particularly useful for teams building **GitOps**, **custom
+#     CI/CD pipelines**, or webhook-driven automation who want better observability
+#     and debuggability than traditional CI tools.
+# 
+#     For a deeper dive into this approach, check the related [blog
+#     post](https://levelup.gitconnected.com/when-github-actions-get-painful-to-troubleshoot-try-this-instead-9a134c9e9baf)
+#     and review a sample [JSON webhook
+#     payload](https://gist.github.com/anna-geller/54c999b3b2ba3647223618f8c657910f)
+#     used for local testing.
+#   tags:
+#     - Infrastructure
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Build CI/CD workflows with GitHub webhooks and test locally with JSON payloads in Kestra. A production-ready pattern for pull request event automation.

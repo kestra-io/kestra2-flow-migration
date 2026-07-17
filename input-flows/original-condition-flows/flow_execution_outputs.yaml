@@ -1,0 +1,20 @@
+id: flow_execution_outputs
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Triggered only when upstream row_count > 0!
+
+triggers:
+  - id: after_extract
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionOutputs
+        expression: "{{ outputs.row_count > 0 }}"
+    preconditions:
+      id: flows
+      flows:
+        - namespace: company.team
+          flowId: extract
+          states: [SUCCESS]

@@ -1,0 +1,77 @@
+id: create-jira-ticket-on-failure
+namespace: company.team
+
+tasks:
+  - id: create_ticket
+    type: io.kestra.plugin.jira.issues.Create
+    baseUrl: your-domain.atlassian.net
+    username: your_email@example.com
+    password: "{{ secret('JIRA_API_TOKEN') }}"
+    projectKey: myproject
+    summary: Kestra Workflow Failed
+    description: "{{ trigger.executionId }} has failed on {{ taskrun.startDate }}"
+    labels:
+      - bug
+      - workflow
+
+triggers:
+  - id: on_failure
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - when: "{{ trigger.namespace startsWith 'company' }}"
+        states:
+          - FAILED
+          - WARNING
+
+# extend:
+#   shortDescription: "This blueprint implements an incident management and operational monitoring pattern by automatically creating Jira issues whenever a Kestra workflow execution."
+#   title: Create Jira Issues Automatically for Incident Management
+#   metaTitle: Create Jira Issues Automatically for Incident
+#   description: |
+#     This blueprint implements an **incident management and operational
+#     monitoring pattern** by automatically creating **Jira issues** whenever a
+#     Kestra workflow execution fails or enters a warning state.
+# 
+#     It demonstrates how to:
+# 
+#     1. Monitor workflow executions globally using a system-level flow trigger.
+#     2. Detect failed or warning executions across all namespaces with a defined
+#        prefix.
+#     3. Create structured Jira issues enriched with execution metadata such as
+#        execution ID and failure timestamp.
+#     4. Track workflow execution incidents directly in Jira alongside other
+#        engineering and operational issues.
+#     5. Extend the workflow with additional context, labeling, or escalation
+#        logic based on failure type or severity.
+# 
+#     This pattern is ideal for **DevOps**, **platform engineering**, and
+#     **reliability teams** that rely on Jira as their primary system for incident
+#     tracking and operational issue management.
+# 
+#     You can customize this system flow by modifying the task, adding more tasks,
+#     or adjusting the trigger conditions. Read more about this pattern in the
+#     [Administrator
+#     Guide](https://kestra.io/docs/administrator-guide/monitoring).
+# 
+#     Example failure flow used to trigger this system flow:
+# 
+#     ```yaml
+#     id: failure_flow
+#     namespace: company.team
+# 
+#     tasks:
+#       - id: always_fails
+#         type: io.kestra.plugin.core.execution.Fail
+#     ```
+# 
+#     Whenever the `failure_flow` is executed and fails, this system blueprint
+#     automatically creates a corresponding Jira issue, ensuring workflow
+#     failures are tracked and resolved efficiently.
+#   tags:
+#     - Core
+#     - Infrastructure
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Automatically create Jira issues when Kestra workflows fail. An incident
+#     management blueprint for tracking workflow execution failures in Jira.

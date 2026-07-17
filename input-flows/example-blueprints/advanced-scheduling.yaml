@@ -1,0 +1,112 @@
+id: advanced-scheduling
+namespace: company.team
+
+inputs:
+  - id: country
+    type: STRING
+    defaults: US
+  - id: date
+    type: DATETIME
+    required: false
+    prefill: 2023-12-22T14:00:00.000Z
+
+tasks:
+  - id: check_if_business_date
+    type: io.kestra.plugin.scripts.python.Commands
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    namespaceFiles:
+      enabled: true
+    dependencies:
+      - workalendar
+    commands:
+      - python schedule.py "{{trigger.date ?? inputs.date}}" {{inputs.country}}
+
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: business day - continuing the flow...
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: 0 14 25 12 *
+
+# extend:
+#   shortDescription: "This blueprint demonstrates an advanced scheduling automation pattern that allows tasks to run only on business days, using a Python-based calendar check with."
+#   title: Advanced Scheduling Automation, Run Tasks Only on Business Days by Country
+#   metaTitle: Advanced Scheduling Automation
+#   description: |
+#     This blueprint demonstrates an **advanced scheduling automation pattern**
+#     that allows tasks to run **only on business days**, using a **Python-based
+#     calendar check** with country-specific public holidays.
+# 
+#     It works as follows:
+#     - A Python script (`schedule.py`) evaluates whether a given date is a
+#       business day for the selected country.
+#     - If the date is a business day, the automation continues.
+#     - If the date falls on a weekend or public holiday, the task exits with an
+#       error, preventing downstream execution.
+# 
+#     This approach is commonly used in **enterprise automation**, **financial
+#     processing**, **billing systems**, **reporting jobs**, and **data pipelines**
+#     where executions must strictly follow local business calendars.
+# 
+#     The expression `"{{trigger.date ?? inputs.date}}"` ensures that the task
+#     uses the scheduled execution date in production, while still allowing manual
+#     testing by providing a custom date input.
+# 
+#     Make sure to adjust the Python script to match your desired country.
+# 
+#     To add the Python script, go to the VS Code Editor in the automation UI and
+#     add the script `schedule.py` as a Namespace File:
+# 
+#     ```python
+#     import sys
+# 
+#     from datetime import datetime
+#     from workalendar.europe import France  # Import calendars for specific countries
+#     from workalendar.usa import UnitedStates  # Example for another country
+# 
+#     def is_business_day(date_str, country_calendar):
+#         # Remove 'Z' from kestra's timezone-specific timestamp and parse the date string
+#         date = datetime.fromisoformat(date_str.replace("Z", ""))
+# 
+#         # Check if the date is a business day
+#         return country_calendar.is_working_day(date)
+# 
+#     def main():
+#         if len(sys.argv) != 3:
+#             print("Usage: script.py <date> <country_code>")
+#             sys.exit(1)
+# 
+#         date_str, country_code = sys.argv[1], sys.argv[2]
+# 
+#         # Dictionary mapping country codes to calendar objects
+#         calendars = {
+#             "FR": France(),
+#             "US": UnitedStates(),
+#         }
+# 
+#         country_calendar = calendars.get(country_code.upper())
+#         if not country_calendar:
+#             print(f"Calendar for '{country_code}' not supported or not found.")
+#             sys.exit(1)
+# 
+#         try:
+#             if not is_business_day(date_str, country_calendar):
+#                 print(f"{date_str} is not a business day in {country_code}.")
+#                 sys.exit(1)
+#             else:
+#                 print(f"{date_str} is a business day in {country_code}.")
+#         except Exception as e:
+#             print(f"Error: {e}")
+#             sys.exit(1)
+# 
+#     if __name__ == "__main__":
+#         main()
+#     ```
+#   tags:
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Schedule Kestra tasks to run only on business days using Python and holiday calendars. An advanced scheduling pattern for enterprise and financial automation.

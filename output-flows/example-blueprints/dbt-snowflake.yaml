@@ -1,0 +1,64 @@
+id: dbt-snowflake
+namespace: company.team
+
+tasks:
+  - id: git
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/kestra-io/dbt-example
+        branch: main
+
+      - id: dbt
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: ghcr.io/kestra-io/dbt-snowflake:latest
+        profiles: |
+          my_dbt_project:
+            outputs:
+              dev:
+                type: snowflake
+                account: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ secret('SNOWFLAKE_USER') }}"
+                password: "{{ secret('SNOWFLAKE_PASSWORD') }}"
+                role: "{{ secret('SNOWFLAKE_ROLE') }}"
+                database: "{{ secret('SNOWFLAKE_DATABASE') }}"
+                warehouse: COMPUTE_WH
+                schema: public
+                threads: 4
+                query_tag: dbt
+                client_session_keep_alive: False
+                connect_timeout: 10
+            target: dev
+        commands:
+          - dbt deps
+          - dbt build
+
+# extend:
+#   shortDescription: "This workflow runs dbt models directly on Snowflake by pulling a dbt project from Git and executing it in an isolated Docker environment."
+#   title: Execute dbt transformations on Snowflake using a Git-based workflow
+#   metaTitle: Execute dbt transformations on Snowflake
+#   description: |
+#     This workflow runs dbt models directly on Snowflake by pulling a dbt project
+#     from Git and executing it in an isolated Docker environment.
+# 
+#     It’s designed for teams who want a clean and reproducible way to:
+#       - Run dbt transformations on Snowflake without local setup
+#       - Keep analytics logic versioned and reviewed in Git
+#       - Securely inject Snowflake credentials using secrets
+#       - Execute dbt reliably in scheduled jobs or automated pipelines
+# 
+#     By using a containerized dbt runtime, the flow ensures consistent behavior
+#     across environments and removes the risk of dependency drift between
+#     developers, CI pipelines, and production runs.
+# 
+#     This pattern fits well for modern analytics stacks where Snowflake is the
+#     central warehouse and dbt is used to model, test, and document data at scale.
+# 
+#   tags:
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Run dbt ELT pipelines on Snowflake from Git using Docker and Kestra. Execute dbt deps and dbt build to transform data in your Snowflake warehouse.

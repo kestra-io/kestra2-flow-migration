@@ -1,0 +1,161 @@
+id: chat-with-your-data
+namespace: company.team
+
+inputs:
+  - id: question
+    type: STRING
+    defaults: How do I join the course after it has started?
+  - id: select_a_zoomcamp
+    type: SELECT
+    defaults: data-engineering-zoomcamp
+    values:
+      - data-engineering-zoomcamp
+      - machine-learning-zoomcamp
+      - data-science-zoomcamp
+
+tasks:
+  - id: search
+    type: io.kestra.plugin.elasticsearch.Search
+    connection:
+      hosts:
+        - http://localhost:9200/
+    indexes:
+      - course_questions
+    request:
+      size: 5
+      query:
+        bool:
+          must:
+            multi_match:
+              query: "{{ inputs.question }}"
+              fields:
+                - question
+                - text
+                - section
+              type: best_fields
+          filter:
+            term:
+              course: "{{ inputs.select_a_zoomcamp }}"
+
+  - id: context_template
+    type: io.kestra.plugin.core.debug.Return
+    format: |
+      {% for row in outputs.search.rows %}
+        Section: {{ row.section }}
+        Question: {{ row.question }}
+        Text: {{ row.text }}
+      {% endfor %}
+
+  - id: generate_response
+    type: io.kestra.plugin.openai.ChatCompletion
+    apiKey: sk-proj-your-OpenAI-API-KEY
+    model: gpt-4o
+    maxTokens: 500
+    prompt: |
+      You're a course teaching assistant. 
+
+      Answer the user QUESTION based on CONTEXT - the documents retrieved from
+      our FAQ database. 
+
+      Only use the facts from the CONTEXT. 
+
+      If the CONTEXT doesn't contain the answer, return "NONE".
+      QUESTION: {{ inputs.question }}
+      CONTEXT: {{ outputs.context_template.value }}
+
+  - id: log_output
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ outputs.generate_response.choices | jq('.[].message.content') |
+      first }}"
+
+# extend:
+#   shortDescription: "This blueprint shows how to build a chat-with-your-data system using Elasticsearch for retrieval and OpenAI for response generation following the."
+#   title: Build a Chat-With-Your-Data System Using Elasticsearch and OpenAI (RAG)
+#   metaTitle: Build a Chat-With-Your-Data System
+#   description: |
+#     This blueprint shows how to build a **chat-with-your-data system** using
+#     **Elasticsearch for retrieval** and **OpenAI for response generation**
+#     following the **Retrieval-Augmented Generation (RAG)** pattern.
+# 
+#     The automation performs the following steps:
+# 
+#     1. Searches an Elasticsearch index to retrieve the most relevant documents
+#        based on a natural-language user question.
+#     2. Converts the search results into a structured context prompt.
+#     3. Sends the context and question to an OpenAI LLM to generate a grounded,
+#        factual response.
+#     4. Returns an answer strictly based on retrieved documents to avoid
+#        hallucinations.
+# 
+#     This approach is ideal for:
+#       - Chatbots powered by internal knowledge bases
+#       - FAQ and documentation assistants
+#       - Search-augmented AI systems
+#       - Enterprise knowledge retrieval
+#       - Course, product, or support assistants
+# 
+#     The example uses an Elasticsearch index populated with a publicly available
+#     **DataTalksClub FAQ dataset**
+#     (https://raw.githubusercontent.com/alexeygrigorev/llm-rag-workshop/main/notebooks/documents.json),
+#     making it easy to reproduce and extend.
+# 
+#     To set up Elasticsearch locally for testing, use:
+# 
+#     ```bash
+#     docker run -it \
+#         --rm \
+#         --name elasticsearch \
+#         -m 2G \
+#         -p 9200:9200 \
+#         -p 9300:9300 \
+#         -e "discovery.type=single-node" \
+#         -e "xpack.security.enabled=false" \
+#         docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+#     ```
+# 
+#     If Elasticsearch exits due to memory pressure, increase the container memory
+#     using the `-m` flag.
+# 
+#     Create the sample `course_questions` index:
+# 
+#     ```bash
+#     curl -X PUT "http://localhost:9200/course_questions" \
+#     -H "Content-Type: application/json" -d'
+#     {
+#       "settings": {
+#         "number_of_shards": 1,
+#         "number_of_replicas": 0
+#       },
+#       "mappings": {
+#         "properties": {
+#           "text": { "type": "text" },
+#           "section": { "type": "text" },
+#           "question": { "type": "text" },
+#           "course": { "type": "keyword" }
+#         }
+#       }
+#     }'
+#     ```
+# 
+#     Load data into the index using:
+# 
+#     ```bash
+#     curl -X POST "http://localhost:9200/course_questions/_bulk" \
+#     -H "Content-Type: application/json" \
+#     --data-binary @<(curl -s \
+#     https://huggingface.co/datasets/kestra/datasets/raw/main/json/zoomcamp_faq.json \
+#     | jq -c '.[] | {"index":{}}, .')
+#     ```
+# 
+#     To generate responses, you’ll need an OpenAI API key:
+#       - Create an account at https://platform.openai.com/
+#       - Generate a key from https://platform.openai.com/api-keys
+# 
+#     **Thanks to [Faithful Adeda](https://github.com/kestra-io/kestra/issues/4608)
+#     for contributing this example.**
+#   tags:
+#     - AI
+#     - Data
+#   ee: false
+#   demo: false
+#   metaDescription: Build a RAG chat system with Kestra, Elasticsearch, and OpenAI. Search documents and generate grounded AI responses using Retrieval-Augmented Generation.

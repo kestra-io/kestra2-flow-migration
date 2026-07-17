@@ -1,0 +1,39 @@
+id: schedule-condition-or
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Demo for Or condition 
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Or
+        conditions:
+          - type: io.kestra.plugin.core.condition.DayWeek
+            date: "{{ trigger.date }}"
+            dayOfWeek: MONDAY
+          - type: io.kestra.plugin.core.condition.DayWeek
+            date: "{{ trigger.date }}"
+            dayOfWeek: THURSDAY
+
+# extend:
+#   shortDescription: "This trigger executes the flow at 11am every day with the schedule condition that the trigger date should either fall on a Monday or a Thursday."
+#   title: Executes flow on schedule trigger with Or condition
+#   metaTitle: Executes flow on schedule trigger with Or condition
+#   description: |
+#     This trigger executes the flow at 11am every day with the schedule condition that the 
+#     trigger date should either fall on a Monday or a Thursday. In other words, the flow 
+#     will get executed only on Mondays and Thursdays.
+# 
+#     With Or condition, you can put multiple conditions of which at least one should 
+#     evaluate to true for the flow to be executed on the trigger.
+# 
+#   tags:
+#     - Core
+#   ee: false
+#   demo: true
+#   metaDescription: Combine multiple Kestra schedule conditions with the Or operator. Trigger workflows when any one of several configured conditions is satisfied.

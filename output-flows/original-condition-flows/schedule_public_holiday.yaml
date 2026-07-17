@@ -1,0 +1,13 @@
+id: schedule_public_holiday
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: This will execute only on French public holidays!
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    when: "{{ isPublicHoliday(trigger.date, 'FR') }}"

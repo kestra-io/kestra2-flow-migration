@@ -1,0 +1,48 @@
+id: s3-trigger
+namespace: company.team
+
+tasks:
+  - id: each
+    type: io.kestra.plugin.core.flow.ForEach
+    concurrencyLimit: 0
+    values: "{{ trigger.objects | jq('.[].uri') }}"
+    tasks:
+      - id: s3_object
+        type: io.kestra.plugin.core.debug.Return
+        format: "{{ taskrun.value }}"
+
+triggers:
+  - id: wait_for_s3_object
+    type: io.kestra.plugin.aws.s3.Trigger
+    bucket: declarative-orchestration
+    prefix: demo
+    interval: PT1S
+    filter: FILES
+    action: MOVE
+    moveTo:
+      key: archive/demo/
+    region: "{{ secret('AWS_DEFAULT_REGION') }}"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+
+# extend:
+#   shortDescription: "This flow will be triggered whenever new files with a given prefix are detected in the specified S3 bucket."
+#   title: "AWS S3 Event Trigger "
+#   metaTitle: AWS S3 Event Trigger
+#   description: |
+#     This flow will be triggered whenever new files with a given prefix are
+#     detected in the specified S3 bucket. It will download the files into the
+#     internal storage and move the S3 objects to an `archive` folder (i.e. S3
+#     object prefix with the name `archive`).
+# 
+#     The `FoEach` task will iterate over the objects and print their URIs.
+# 
+#     It's recommended to set the `accessKeyId` and `secretKeyId` properties as secrets.
+# 
+#     This flow assumes AWS credentials stored as secrets `AWS_ACCESS_KEY_ID`,
+#     `AWS_SECRET_ACCESS_KEY` and `AWS_DEFAULT_REGION`.
+#   tags:
+#     - Cloud
+#   ee: false
+#   demo: false
+#   metaDescription: Trigger a Kestra flow on new file detection in an S3 bucket. Download files to internal storage and process them automatically for data pipeline automation.

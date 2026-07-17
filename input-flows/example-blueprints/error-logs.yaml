@@ -1,0 +1,47 @@
+id: error-logs
+namespace: company.team
+
+tasks:
+  - id: fail
+    type: io.kestra.plugin.core.execution.Fail
+    errorMessage: Something went wrong, make sure to fix it asap!
+
+errors:
+  - id: slack
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
+    url: "{{ secret('SLACK_WEBHOOK') }}"
+    messageText: "Failure alert for flow `{{ flow.namespace }}.{{ flow.id }}` with ID `{{ execution.id }}`. Here is a bit more context about why the execution failed: `{{ errorLogs()[0]['message'] }}`"
+
+# extend:
+#   shortDescription: "This workflow demonstrates how to capture and forward detailed error context from failed Kestra task executions using the errorLogs() function and send."
+#   title: Error Handling & Observability, Send  Detailed Failure Context to Slack
+#   metaTitle: Error Handling & Observability
+#   description: |
+#     This workflow demonstrates how to **capture and forward detailed error
+#     context** from failed Kestra task executions using the `errorLogs()` function
+#     and send enriched failure notifications to **Slack**.
+# 
+#     It shows how to:
+# 
+#     1. Force a workflow failure to demonstrate error handling and alerting
+#        patterns.
+#     2. Retrieve structured error logs from a failed task run using the
+#        `errorLogs()` function.
+#     3. Extract meaningful failure messages to provide actionable context in
+#        alerts.
+#     4. Send enriched Slack notifications containing both execution metadata and
+#        the underlying error message.
+#     5. Improve observability and reduce troubleshooting time by surfacing
+#        precise failure reasons.
+# 
+#     This pattern is ideal for **monitoring**, **debugging**, and **incident
+#     response** workflows where understanding *why* a failure occurred is as
+#     important as knowing *that* it failed.
+#   tags:
+#     - Core
+#     - Infrastructure
+#   ee: false
+#   demo: false
+#   metaDescription: |
+#     Send detailed error messages to Slack using Kestra’s errorLogs() function.
+#     An observability and error-handling blueprint for actionable failure alerts.

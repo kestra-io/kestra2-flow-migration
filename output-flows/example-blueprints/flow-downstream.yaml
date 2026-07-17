@@ -1,0 +1,36 @@
+id: flow-downstream
+namespace: company.team
+
+tasks:
+  - id: task_c
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ task.id }}"
+
+triggers:
+  - id: multiple_listen_flow
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - flowId: flow_a
+        namespace: company.team
+        states:
+          - SUCCESS
+      - flowId: flow_b
+        namespace: company.team
+        states:
+          - SUCCESS
+    window:
+      lookback: P1D
+
+# extend:
+#   shortDescription: "Trigger a flow as soon as two other flows finish successfully."
+#   title: Trigger a flow when other flows finish successfully
+#   metaTitle: Trigger a flow when other flows finish successfully
+#   description: "Trigger a flow as soon as two other flows finish successfully.
+#     This flow will be triggered when `flow_a` and `flow_b` both successfully
+#     finish their execution within the time window of 24 hours (`window: P1D` = 1
+#     day) from now (`windowAdvance: P0D` = zero days)."
+#   tags:
+#     - Core
+#   ee: false
+#   demo: false
+#   metaDescription: Trigger a Kestra flow when two upstream flows complete successfully. Build dependency-driven pipelines with multi-flow completion conditions.
