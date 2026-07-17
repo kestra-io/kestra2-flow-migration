@@ -79,7 +79,9 @@ esac
 require awk
 release_json="$(mktemp)"
 if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
-  download "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" "$release_json"
+  # /releases/latest excludes prereleases; this repo publishes alpha releases,
+  # so resolve the newest release (prereleases included) from the list instead.
+  download "https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=1" "$release_json"
 else
   download "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${VERSION}" "$release_json"
 fi
