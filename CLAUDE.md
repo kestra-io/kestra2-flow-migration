@@ -119,8 +119,8 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `renameMaxAttemptToMaxAttempts` | Retry: `maxAttempt` → `maxAttempts` (global) |
 | `renamePauseDelayToPauseDuration` | Pause task: `delay` → `pauseDuration` |
 | `normalizeFetchType` | `fetchType: STORE/FETCH` → `store: true` / `fetch: true` (specific plugins) |
-| `renameTaskDefaults` | Top-level: `taskDefaults` → `pluginDefaults` |
-| `stripPluginDefaultsForced` | Removes `forced` from each `pluginDefaults` entry (removed in v2; hard parse failure). Runs after `renameTaskDefaults`. |
+| `renameTaskDefaults` | Top-level: `taskDefaults` → `pluginDefaults`. ⚠️ **Known incorrect for v2** — see note below. |
+| `stripPluginDefaultsForced` | Removes `forced` from each `pluginDefaults` entry (removed in v2; hard parse failure). Runs after `renameTaskDefaults`. ⚠️ **Insufficient for v2** — see note below. |
 | `renameScheduleConditions` | Schedule trigger: `scheduleConditions` → `conditions` |
 | `renameTypes` | 60+ type renames via `typeRenames` map (Template→Subflow, Echo→Log, state→kv, old `io.kestra.core.*` paths, condition types, storage aliases, log.Fetch→kestra.logs.Fetch, third-party plugin renames: notifications→slack/email/discord, slack internal restructure, kubernetes/datagen core subpackages, astradb→cassandra, fs.http→core.http). Also renames `templateId` → `flowId` on Template tasks. |
 | `renameConditionSuffix` | Strips `Condition` suffix from `io.kestra.plugin.core.condition.*` types (excludes `MultipleCondition`) |
@@ -136,6 +136,8 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `removeRequiredFalseWithDefaults` | Inputs: removes `required: false` when `defaults` is present (v2 requires inputs with defaults to be required) |
 | `renameReservedFlowIDs` | Appends `-flow` to flow IDs that clash with v2 reserved keywords (`pause`, `resume`, `search`, etc.) |
 | `migrateDbtBuildToDbtCLI` | Renames `io.kestra.plugin.dbt.cli.Build` → `io.kestra.plugin.dbt.cli.DbtCLI`, adds `commands: [dbt build]` when not already set (the old `Build` task ran `dbt build` implicitly), drops `dbtPath` (not a DbtCLI property), and promotes `dockerOptions.image` → `containerImage`. |
+
+> ⚠️ **`pluginDefaults` is removed entirely in v2** (verified 2026-08-11 on kestra `releases/v2.0.x`: no `pluginDefaults` field on `Flow.java`; new `policyRefs` field). A flow carrying `pluginDefaults:` fails to parse on 2.0, so `renameTaskDefaults` currently emits invalid v2 YAML and `stripPluginDefaultsForced` only makes it less invalid. The replacement is EE Policies / inlined values, which cannot be generated mechanically. These two rules should be replaced by a validation warning on the v2 path (keeping the rename only under `--stay-v1-compatible`). Documented in `migration-documentation/flows-changes.md`; code change pending.
 
 ### Removed type detection (validation warnings)
 
