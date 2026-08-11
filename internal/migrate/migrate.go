@@ -19,8 +19,6 @@ var rules = []rule{
 	renameMaxAttemptToMaxAttempts,
 	renamePauseDelayToPauseDuration,
 	normalizeFetchType,
-	renameTaskDefaults,
-	stripPluginDefaultsForced,
 	migrateDbtBuildToDbtCLI,
 	renameTypes,
 	removeDeprecatedProperties,
@@ -101,6 +99,22 @@ func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
 		warnings = append(warnings, detectPebbleVersionArg(&doc)...)
+		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
+		// mechanical replacement — warning-only, like the flow-iteration types.
+		warnings = append(warnings, detectPluginDefaults(&doc)...)
+	} else {
+		// v1.3 still accepts `pluginDefaults`, so under --stay-v1-compatible the
+		// pre-v2 normalization is kept: rename the deprecated `taskDefaults`
+		// alias and drop `forced` (both outputs remain valid on v1.3). On the v2
+		// path these are skipped in favor of the warning above — renaming into a
+		// keyword that no longer exists would only produce a flow that fails to
+		// parse under a different key.
+		if err := renameTaskDefaults(&doc); err != nil {
+			return nil, nil, err
+		}
+		if err := stripPluginDefaultsForced(&doc); err != nil {
+			return nil, nil, err
+		}
 	}
 	// Detect removed types after all rename/rewrite rules have run.
 	warnings = append(warnings, detectRemovedTypes(&doc)...)
@@ -854,6 +868,38 @@ func detectRemovedTypes(doc *yaml.Node) []string {
 			warnings = append(warnings, fmt.Sprintf("%s uses %s (%s)", id, typ, reason))
 		}
 	})
+	return warnings
+}
+
+// detectPluginDefaults flags a flow-level `pluginDefaults` (or its deprecated
+// `taskDefaults` alias) block. The keyword is removed in v2 at every scope —
+// flow, namespace, tenant, and the global `kestra.plugins.defaults` config — and
+// a flow that still carries the block fails to parse. Verified on the shipped
+// releases/v2.0.x branch: the flow model has no `pluginDefaults` field and gains
+// a `policyRefs` field instead.
+//
+// Warning-only, like the flow-iteration types: the replacement is an EE Policy
+// (`Add` rules, with `forced: true` becoming `override: true`) or, in OSS,
+// inlining the values onto each matching task. Neither can be derived
+// mechanically — the tool cannot know which tasks a `type:`-prefix default
+// applied to, and cannot create a Policy resource from inside a flow file.
+// (flows-changes.md: "`taskDefaults` / `pluginDefaults` removed entirely")
+func detectPluginDefaults(doc *yaml.Node) []string {
+	root := docRoot(doc)
+	if root == nil || root.Kind != yaml.MappingNode {
+		return nil
+	}
+	var warnings []string
+	for _, key := range []string{"pluginDefaults", "taskDefaults"} {
+		if mappingValue(root, key) == nil {
+			continue
+		}
+		warnings = append(warnings, fmt.Sprintf(
+			"flow-level `%s` is removed in v2 and must be rewritten manually "+
+				"(EE: a Policy with `Add` rules, referenced via `policyRefs:`; "+
+				"OSS: inline the values onto each task or use flow `variables:`)",
+			key))
+	}
 	return warnings
 }
 

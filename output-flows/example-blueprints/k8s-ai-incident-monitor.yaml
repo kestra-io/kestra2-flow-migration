@@ -118,6 +118,7 @@ triggers:
 
 pluginDefaults:
   - type: io.kestra.plugin.kubernetes.kubectl.Get
+    forced: false
     values:
       fetchType: STORE
       namespace: default

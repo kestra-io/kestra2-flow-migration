@@ -40,7 +40,8 @@ tasks:
     htmlTextContent: "{{ outputs.convert_to_html.outputText }}"
 
 pluginDefaults:
-  - type: io.kestra.plugin.perplexity.ChatCompletion
+  - forced: false
+    type: io.kestra.plugin.perplexity.ChatCompletion
     values:
       apiKey: "{{ secret('PERPLEXITY_API_KEY') }}"
       model: sonar

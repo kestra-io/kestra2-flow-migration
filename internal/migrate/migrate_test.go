@@ -29,6 +29,16 @@ func applyWithWarnings(t *testing.T, in string) (string, []string) {
 	return string(out), warnings
 }
 
+// hasWarningContaining reports whether any warning contains substr.
+func hasWarningContaining(warnings []string, substr string) bool {
+	for _, w := range warnings {
+		if strings.Contains(w, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 // ── Rule: renameInputNameToID ─────────────────────────────────────────────────
 
 func TestApply_RenameInputNameToID(t *testing.T) {
@@ -260,9 +270,11 @@ tasks:
 	}
 }
 
-// ── Rule: renameTaskDefaults ──────────────────────────────────────────────────
+// ── Rule: renameTaskDefaults (v1-compatible path only) ───────────────────────
 
-func TestApply_RenameTaskDefaults(t *testing.T) {
+// On the v2 path `taskDefaults` is left alone and flagged instead — the keyword
+// it used to be renamed into is itself removed in v2.
+func TestApply_TaskDefaults_V2WarnsAndLeavesUntouched(t *testing.T) {
 	in := `
 id: test-flow
 namespace: company.team
@@ -274,16 +286,41 @@ tasks:
   - id: hello
     type: io.kestra.plugin.core.log.Log
 `
-	out := apply(t, in)
-	if strings.Contains(out, "taskDefaults:") {
-		t.Error("output still contains 'taskDefaults:'")
+	out, warnings := applyWithWarnings(t, in)
+	if strings.Contains(out, "pluginDefaults:") {
+		t.Errorf("v2 path must not rename taskDefaults into the removed pluginDefaults keyword; got:\n%s", out)
 	}
-	if !strings.Contains(out, "pluginDefaults:") {
-		t.Error("output missing 'pluginDefaults:'")
+	if !strings.Contains(out, "taskDefaults:") {
+		t.Errorf("v2 path must leave taskDefaults in place for manual rewrite; got:\n%s", out)
+	}
+	if !hasWarningContaining(warnings, "`taskDefaults` is removed in v2") {
+		t.Errorf("expected a manual-rewrite warning for taskDefaults, got: %v", warnings)
 	}
 }
 
-func TestApply_RenameTaskDefaults_NoTaskDefaults(t *testing.T) {
+func TestApply_PluginDefaults_V2Warns(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+pluginDefaults:
+  - type: io.kestra.plugin.core.log.Log
+    values:
+      message: default
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+`
+	out, warnings := applyWithWarnings(t, in)
+	if !strings.Contains(out, "pluginDefaults:") {
+		t.Errorf("pluginDefaults must be left in place for manual rewrite; got:\n%s", out)
+	}
+	if !hasWarningContaining(warnings, "`pluginDefaults` is removed in v2") {
+		t.Errorf("expected a manual-rewrite warning for pluginDefaults, got: %v", warnings)
+	}
+}
+
+// A flow with no defaults block must not be flagged.
+func TestApply_PluginDefaults_NoWarningWhenAbsent(t *testing.T) {
 	in := `
 id: test-flow
 namespace: company.team
@@ -291,9 +328,47 @@ tasks:
   - id: hello
     type: io.kestra.plugin.core.log.Log
 `
-	out := apply(t, in)
+	out, warnings := applyWithWarnings(t, in)
 	if strings.Contains(out, "pluginDefaults:") {
-		t.Error("should not add pluginDefaults when taskDefaults is absent")
+		t.Error("should not add pluginDefaults when the flow has none")
+	}
+	if hasWarningContaining(warnings, "removed in v2 and must be rewritten manually") {
+		t.Errorf("unexpected pluginDefaults warning, got: %v", warnings)
+	}
+}
+
+// Under --stay-v1-compatible the pre-v2 normalization is kept: v1.3 still
+// accepts `pluginDefaults`, so the deprecated `taskDefaults` alias is renamed
+// and `forced` is dropped. No manual-rewrite warning is emitted there.
+func TestApply_TaskDefaults_StayV1CompatibleStillRenames(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+taskDefaults:
+  - type: io.kestra.plugin.core.log.Log
+    forced: true
+    values:
+      message: default
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+`
+	out, warnings, err := Apply([]byte(in), StayV1Compatible())
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	got := string(out)
+	if strings.Contains(got, "taskDefaults:") {
+		t.Errorf("StayV1Compatible should rename taskDefaults; got:\n%s", got)
+	}
+	if !strings.Contains(got, "pluginDefaults:") {
+		t.Errorf("StayV1Compatible should emit pluginDefaults; got:\n%s", got)
+	}
+	if strings.Contains(got, "forced") {
+		t.Errorf("StayV1Compatible should still strip forced; got:\n%s", got)
+	}
+	if hasWarningContaining(warnings, "must be rewritten manually") {
+		t.Errorf("no manual-rewrite warning expected under StayV1Compatible, got: %v", warnings)
 	}
 }
 
@@ -2498,11 +2573,12 @@ triggers:
 	if strings.Contains(out, "type: ENUM") {
 		t.Error("ENUM not renamed to SELECT")
 	}
-	// taskDefaults → pluginDefaults
-	if strings.Contains(out, "taskDefaults:") {
-		t.Error("taskDefaults not renamed")
+	// taskDefaults is left intact on the v2 path and flagged for manual rewrite —
+	// pluginDefaults, the key it used to be renamed into, is itself removed in v2.
+	if !strings.Contains(out, "taskDefaults:") {
+		t.Error("taskDefaults should be left intact (warning-only)")
 	}
-	// maxAttempt → maxAttempts
+	// maxAttempt → maxAttempts (still rewritten inside the untouched block)
 	if strings.Contains(out, "maxAttempt:") {
 		t.Error("maxAttempt not renamed")
 	}
@@ -3184,7 +3260,19 @@ func warningsContain(warnings []string, substr string) bool {
 	return false
 }
 
-// ── Rule: stripPluginDefaultsForced ──────────────────────────────────────────
+// ── Rule: stripPluginDefaultsForced (v1-compatible path only) ────────────────
+//
+// On the v2 path the whole `pluginDefaults` block is warning-only, so these
+// tests exercise Apply with StayV1Compatible, where the block is still valid.
+
+func applyV1Compatible(t *testing.T, in string) string {
+	t.Helper()
+	out, _, err := Apply([]byte(in), StayV1Compatible())
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	return string(out)
+}
 
 func TestApply_StripPluginDefaultsForced(t *testing.T) {
 	in := `id: test-flow
@@ -3199,7 +3287,7 @@ tasks:
     type: io.kestra.plugin.core.log.Log
     message: hi
 `
-	out := apply(t, in)
+	out := applyV1Compatible(t, in)
 	if strings.Contains(out, "forced") {
 		t.Errorf("output still contains `forced`; got:\n%s", out)
 	}
@@ -3227,7 +3315,7 @@ tasks:
     type: io.kestra.plugin.core.log.Log
     message: hi
 `
-	out := apply(t, in)
+	out := applyV1Compatible(t, in)
 	if strings.Contains(out, "forced") {
 		t.Errorf("output still contains `forced`; got:\n%s", out)
 	}
@@ -3260,7 +3348,7 @@ tasks:
     type: io.kestra.plugin.core.log.Log
     message: hi
 `
-	out := apply(t, in)
+	out := applyV1Compatible(t, in)
 	if !strings.Contains(out, "pluginDefaults:") {
 		t.Errorf("taskDefaults not renamed to pluginDefaults; got:\n%s", out)
 	}

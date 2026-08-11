@@ -44,7 +44,8 @@ triggers:
     cron: "0 6 * * *"
 
 pluginDefaults:
-  - type: io.kestra.plugin.anthropic.ChatCompletion
+  - forced: false
+    type: io.kestra.plugin.anthropic.ChatCompletion
     values:
       apiKey: "{{ secret('ANTHROPIC_API_KEY') }}"
       model: "claude-3-5-sonnet-20241022"
