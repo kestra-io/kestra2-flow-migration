@@ -119,8 +119,8 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `renameMaxAttemptToMaxAttempts` | Retry: `maxAttempt` → `maxAttempts` (global) |
 | `renamePauseDelayToPauseDuration` | Pause task: `delay` → `pauseDuration` |
 | `normalizeFetchType` | `fetchType: STORE/FETCH` → `store: true` / `fetch: true` (specific plugins) |
-| `renameTaskDefaults` | Top-level: `taskDefaults` → `pluginDefaults`. ⚠️ **Known incorrect for v2** — see note below. |
-| `stripPluginDefaultsForced` | Removes `forced` from each `pluginDefaults` entry (removed in v2; hard parse failure). Runs after `renameTaskDefaults`. ⚠️ **Insufficient for v2** — see note below. |
+| `renameTaskDefaults` | Top-level: `taskDefaults` → `pluginDefaults`. **Not** in the `rules` slice — v1-compat-only post-step in `Apply()`, applied **only** under `--stay-v1-compatible` (`pluginDefaults` is removed in v2; see note below) |
+| `stripPluginDefaultsForced` | Removes `forced` from each `pluginDefaults` entry. Same gating as `renameTaskDefaults`, and runs after it. |
 | `renameScheduleConditions` | Schedule trigger: `scheduleConditions` → `conditions` |
 | `renameTypes` | 60+ type renames via `typeRenames` map (Template→Subflow, Echo→Log, state→kv, old `io.kestra.core.*` paths, condition types, storage aliases, log.Fetch→kestra.logs.Fetch, third-party plugin renames: notifications→slack/email/discord, slack internal restructure, kubernetes/datagen core subpackages, astradb→cassandra, fs.http→core.http). Also renames `templateId` → `flowId` on Template tasks. |
 | `renameConditionSuffix` | Strips `Condition` suffix from `io.kestra.plugin.core.condition.*` types (excludes `MultipleCondition`) |
@@ -137,13 +137,15 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `renameReservedFlowIDs` | Appends `-flow` to flow IDs that clash with v2 reserved keywords (`pause`, `resume`, `search`, etc.) |
 | `migrateDbtBuildToDbtCLI` | Renames `io.kestra.plugin.dbt.cli.Build` → `io.kestra.plugin.dbt.cli.DbtCLI`, adds `commands: [dbt build]` when not already set (the old `Build` task ran `dbt build` implicitly), drops `dbtPath` (not a DbtCLI property), and promotes `dockerOptions.image` → `containerImage`. |
 
-> ⚠️ **`pluginDefaults` is removed entirely in v2** (verified 2026-08-11 on kestra `releases/v2.0.x`: no `pluginDefaults` field on `Flow.java`; new `policyRefs` field). A flow carrying `pluginDefaults:` fails to parse on 2.0, so `renameTaskDefaults` currently emits invalid v2 YAML and `stripPluginDefaultsForced` only makes it less invalid. The replacement is EE Policies / inlined values, which cannot be generated mechanically. These two rules should be replaced by a validation warning on the v2 path (keeping the rename only under `--stay-v1-compatible`). Documented in `migration-documentation/flows-changes.md`; code change pending.
+> **`pluginDefaults` is removed entirely in v2** (verified 2026-08-11 on kestra `releases/v2.0.x`: no `pluginDefaults` field on `Flow.java`; new `policyRefs` field). A flow carrying `pluginDefaults:` fails to parse on 2.0, and the replacement — an EE Policy or inlined task values — cannot be generated mechanically. So on the v2 path the block is **left untouched and flagged** via `detectPluginDefaults()`, exactly like the flow-iteration types. `renameTaskDefaults` / `stripPluginDefaultsForced` still run under `--stay-v1-compatible`, where `pluginDefaults` is a valid v1.3 keyword.
 
 ### Removed type detection (validation warnings)
 
 `Apply()` returns `([]byte, []string, error)` — the `[]string` contains validation warnings for types removed in v2 with no automated replacement. These flows are still written but flagged for manual rewrite. Detected via the `removedTypes` map and `detectRemovedTypes()`.
 
 Detected types: `MultipleCondition`, `Count`, `Resume`, `Toggle`, `git.Push`, `nashorn.Eval`, `nashorn.FileTransform`, and the flow-iteration types removed in favor of `Loop` (`ForEach`, `ForEachItem`, `EachSequential`, `EachParallel` — both old `io.kestra.core.tasks.flows.*` and new `io.kestra.plugin.core.flow.*` paths; warning-only, no auto-transform).
+
+`detectPluginDefaults()` flags a flow-level `pluginDefaults:` / `taskDefaults:` block — removed in v2 at every scope, no mechanical replacement (EE Policies / inlined values). Warning-only; gated to the v2 path.
 
 `detectPebbleVersionArg()` flags Pebble `read()`/`fileURI()` calls using the removed `version=` named argument (renamed to `revision` in v2 with **no fallback**, kestra PR #16699 / rc3). Warning-only — rewriting inside arbitrary expressions could corrupt embedded script code. Gated to the v2 path.
 

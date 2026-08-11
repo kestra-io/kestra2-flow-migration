@@ -27,7 +27,8 @@ sla:
     behavior: FAIL
 
 pluginDefaults:
-  - type: io.kestra.plugin.docker.Run
+  - forced: false
+    type: io.kestra.plugin.docker.Run
     values:
       containerImage: alpine:latest
       entryPoint: ["/bin/sh", "-c"]

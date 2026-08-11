@@ -37,7 +37,8 @@ tasks:
       - "{{ outputs.create.metadata.name }}"
 
 pluginDefaults:
-  - type: io.kestra.plugin.kubernetes
+  - forced: true
+    type: io.kestra.plugin.kubernetes
     values:
       connection:
         masterUrl: "{{ secret('K8S_MASTER_URL') }}"

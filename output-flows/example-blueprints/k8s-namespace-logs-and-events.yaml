@@ -68,7 +68,8 @@ tasks:
           --server={{ secret('masterUrl') }}
 
 pluginDefaults:
-  - type: io.kestra.plugin.scripts.shell.Commands
+  - forced: true
+    type: io.kestra.plugin.scripts.shell.Commands
     values:
       containerImage: bitnami/kubectl
       taskRunner: # only for local testing with minikube

@@ -98,7 +98,13 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 			fmt.Printf("\033[32m✔ %s\033[0m\n", f.Name)
 			continue
 		}
-		if !bytes.Equal(f.Content, migrated) {
+		if bytes.Equal(f.Content, migrated) {
+			// Warning-only: no rule rewrote anything, but the flow needs manual
+			// work (removed types, pluginDefaults, missing trigger inputs…).
+			// Still print the name, otherwise the warnings below are orphaned
+			// with no indication of which flow they belong to.
+			fmt.Printf("\033[33m⚠ %s\033[0m\n", f.Name)
+		} else {
 			fmt.Printf("\033[33m✎ %s\033[0m\n", f.Name)
 			diff, _ := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 				A:        difflib.SplitLines(string(f.Content)),
