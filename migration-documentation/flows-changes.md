@@ -144,6 +144,29 @@ The full `conditions` subsystem was replaced by `when` (Pebble) on all triggers 
 
 The old-path variants under `io.kestra.core.models.conditions.types.*` (same class names with a `Condition` suffix) are removed in the same way.
 
+## v2-incompatible flows (`--disable-v2-incompatible`)
+
+Warnings emitted by the migrator fall into two severities, decided by whether Kestra 2.0 **rejects the flow on save** (`YamlParser` deserializes flows with `FAIL_ON_UNKNOWN_PROPERTIES = true`, and `FlowValidator` violations are returned as constraint violations):
+
+| Severity | Warnings | Effect on 2.0 |
+|----------|----------|---------------|
+| **v2-incompatible** | removed types, flow-level `pluginDefaults` / `taskDefaults`, unrewritten trigger `conditions` / `preconditions` / `scheduleConditions`, leftover `workerGroup`, Schedule triggers missing an input without `defaults` | Flow is **rejected**; it cannot be deployed at all |
+| **advisory** | Pebble `read()` / `fileURI()` using the removed `version=` argument | Flow deploys; breaks at run time |
+
+`--disable-v2-incompatible` (off by default) rewrites every flow carrying at least one **v2-incompatible** warning into a deployable placeholder, so that a bulk migration can be pushed to a 2.0 instance in one go and the flows needing manual work are visible in the UI instead of failing silently at deploy time:
+
+- the original (best-effort migrated) definition is commented out at the end of the file — nothing is lost, and Kestra stores flow source verbatim, so the comments survive UI edits and Git sync;
+- `disabled: true` is set — a disabled flow pauses its triggers and rejects new executions;
+- the label `v2-migration: needs-manual-rewrite` is added, so the whole set is one label filter away in the UI. Existing labels are preserved (in whichever shape they use — 2.0 accepts both a map and a list of `key`/`value` pairs);
+- the reason for each warning is prepended to the flow `description`, under a `[kestra-migrate] NEEDS MANUAL REWRITE` marker; an existing description is preserved below a `--- original description ---` separator;
+- a placeholder `io.kestra.plugin.core.log.Log` task with id `needs_manual_rewrite` is emitted, because `Flow.tasks` is `@NotEmpty` — a flow with no tasks would not parse, and the disabled/labelled state would never become visible.
+
+Triggers are commented out along with the rest of the body. `disabled: true` already pauses them; the reason they cannot simply be left in place is that a trigger holding a removed type or a v1 `conditions:` block fails to deserialize.
+
+The label key is `v2-migration`, not `v2-migration:needs-manual-rewrite` — label keys are validated against `^[\p{Ll}][\p{L}0-9._-]*$` (`Label.java`), which excludes `:`.
+
+The flag is rejected together with `--stay-v1-compatible`: the severities above describe a 2.0 deployment, and a v1.3 instance parses the flows unchanged.
+
 ## Trigger conditions → `when` / `dependsOn` (reference)
 
 New Pebble helper functions available inside `when` expressions: `isPublicHoliday(date, countryCode, [subdivision])`, `isDayWeekInMonth(date, dayOfWeek, position)` (position: `FIRST`/`SECOND`/`THIRD`/`FOURTH`/`LAST`), `isWeekend(date)`, `isLastWorkingDay(date, [workingDays])` (working days default Mon–Fri), `dayOfWeek(date)` (returns `MONDAY`…`SUNDAY`), `hourOfDay(date)` (0–23), `dayOfMonth(date)` (1–31), `monthOfYear(date)` (1–12).

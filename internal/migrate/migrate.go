@@ -35,7 +35,8 @@ var rules = []rule{
 type Option func(*applyOptions)
 
 type applyOptions struct {
-	stayV1Compatible bool
+	stayV1Compatible      bool
+	disableV2Incompatible bool
 }
 
 // StayV1Compatible skips migration rules whose output is not valid on a v1.3
@@ -45,11 +46,60 @@ func StayV1Compatible() Option {
 	return func(o *applyOptions) { o.stayV1Compatible = true }
 }
 
+// DisableV2Incompatible rewrites flows carrying at least one v2-incompatible
+// warning into a deployable placeholder: the original definition is commented
+// out, `disabled: true` is set, and the flow is labelled
+// `v2-migration: needs-manual-rewrite`. See
+// migration-documentation/flows-changes.md "v2-incompatible flows".
+func DisableV2Incompatible() Option {
+	return func(o *applyOptions) { o.disableV2Incompatible = true }
+}
+
+// Warning describes a construct the migrator could not rewrite automatically.
+type Warning struct {
+	Message string
+
+	// V2Incompatible reports whether Kestra 2.0 rejects the flow outright
+	// because of this warning (unknown type or property, or a FlowValidator
+	// violation) as opposed to accepting the flow and breaking at run time.
+	V2Incompatible bool
+}
+
+func (w Warning) String() string { return w.Message }
+
+// v2Incompatible tags detector output as "2.0 refuses to save this flow".
+func v2Incompatible(messages []string) []Warning {
+	return warningsOf(messages, true)
+}
+
+// advisory tags detector output as "2.0 saves this flow, but it misbehaves".
+func advisory(messages []string) []Warning {
+	return warningsOf(messages, false)
+}
+
+func warningsOf(messages []string, incompatible bool) []Warning {
+	out := make([]Warning, 0, len(messages))
+	for _, m := range messages {
+		out = append(out, Warning{Message: m, V2Incompatible: incompatible})
+	}
+	return out
+}
+
+// HasV2Incompatible reports whether any warning blocks deployment to 2.0.
+func HasV2Incompatible(warnings []Warning) bool {
+	for _, w := range warnings {
+		if w.V2Incompatible {
+			return true
+		}
+	}
+	return false
+}
+
 // Apply applies v1→v2 migration rules to a flow's raw YAML content.
 // The YAML is round-tripped via yaml.v3 nodes to preserve comments.
-// Returns: migrated content, validation warnings (for removed types needing
+// Returns: migrated content, validation warnings (for constructs needing
 // manual rewrite), and any processing error.
-func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
+func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 	var o applyOptions
 	for _, fn := range opts {
 		fn(&o)
@@ -80,9 +130,9 @@ func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
 	// Skipped under StayV1Compatible — the rewrite emits v2-only `when:` /
 	// `dependsOn:` constructs. Unrewritten `MultipleCondition` etc. will still
 	// surface via detectRemovedTypes so the user knows manual work is pending.
-	var warnings []string
+	var warnings []Warning
 	if !o.stayV1Compatible {
-		warnings = rewriteTriggerConditions(&doc)
+		warnings = v2Incompatible(rewriteTriggerConditions(&doc))
 		// `when` on flow-level `checks` is a v2-only construct (v1.3 uses
 		// `condition`), so this rename is gated alongside the trigger rewrite.
 		renameChecksCondition(&doc)
@@ -91,17 +141,17 @@ func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
 		// place (it still parses on v2).
 		migratePurgeKVExpiredOnly(&doc)
 		// `workerSelector` does not exist on v1.3 (EE worker routing).
-		warnings = append(warnings, migrateWorkerGroupToWorkerSelector(&doc)...)
+		warnings = append(warnings, v2Incompatible(migrateWorkerGroupToWorkerSelector(&doc))...)
 		// v2-only validation: Schedule triggers must supply every input lacking
 		// a `defaults`. Warning-only (values can't be invented); a v1-compatible
 		// flow is unaffected, so this is gated to the v2 path.
-		warnings = append(warnings, detectMissingTriggerInputs(&doc)...)
+		warnings = append(warnings, v2Incompatible(detectMissingTriggerInputs(&doc))...)
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
-		warnings = append(warnings, detectPebbleVersionArg(&doc)...)
+		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc))...)
 		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
 		// mechanical replacement — warning-only, like the flow-iteration types.
-		warnings = append(warnings, detectPluginDefaults(&doc)...)
+		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc))...)
 	} else {
 		// v1.3 still accepts `pluginDefaults`, so under --stay-v1-compatible the
 		// pre-v2 normalization is kept: rename the deprecated `taskDefaults`
@@ -117,7 +167,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
 		}
 	}
 	// Detect removed types after all rename/rewrite rules have run.
-	warnings = append(warnings, detectRemovedTypes(&doc)...)
+	warnings = append(warnings, v2Incompatible(detectRemovedTypes(&doc))...)
 
 	after, err := marshalYAML(&doc)
 	if err != nil {
@@ -126,7 +176,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
 
 	// No rules modified the document — return original bytes to preserve formatting.
 	if bytes.Equal(before, after) {
-		return content, warnings, nil
+		return finish(content, warnings, o)
 	}
 	// Replace byte ranges for subtrees that are semantically unchanged with the
 	// original bytes. This preserves block-scalar styles (|, >), non-ASCII
@@ -135,7 +185,20 @@ func Apply(content []byte, opts ...Option) ([]byte, []string, error) {
 	// yaml.v3 strips blank lines on round-trip. Re-insert them wherever the
 	// surrounding context lines still match the original.
 	after = restoreBlankLines(content, after)
-	return after, warnings, nil
+	return finish(after, warnings, o)
+}
+
+// finish applies the post-migration output transforms that depend on the
+// warnings the run produced, and returns Apply's result triple.
+func finish(migrated []byte, warnings []Warning, o applyOptions) ([]byte, []Warning, error) {
+	if !o.disableV2Incompatible || !HasV2Incompatible(warnings) {
+		return migrated, warnings, nil
+	}
+	disabled, err := disableFlow(migrated, warnings)
+	if err != nil {
+		return nil, warnings, err
+	}
+	return disabled, warnings, nil
 }
 
 // restoreBlankLines re-inserts blank lines from original into migrated at

@@ -61,6 +61,8 @@ kestra-migrate [flags] <file.yml|dir>...
 |------|-------------|
 | `-o, --out <dir>` | Write each flow to a file in `<dir>` (preserves subdirectory structure). Default: stdout. |
 | `--check` | Show migration status for each flow: green `✔` if v2-compatible, unified diff if not, red `✗` for removed types. Exits with code 1 when any flow needs migration. |
+| `--stay-v1-compatible` | Skip migration rules whose output is not valid on a v1.3 instance, so the migrated flows can still be deployed to v1.3. |
+| `--disable-v2-incompatible` | Rewrite flows that Kestra 2.0 would reject into a disabled placeholder labelled `v2-migration: needs-manual-rewrite`, keeping the original definition as comments. Off by default. |
 
 ### Examples
 
@@ -81,12 +83,46 @@ kestra-migrate my-flow.yaml
 
 ### Validation warnings
 
-Flows that use types removed in v2 with no automated replacement (e.g. `MultipleCondition`, `nashorn.Eval`) are still migrated as far as possible, but produce warnings:
+Flows using constructs the tool cannot rewrite are still migrated as far as possible, and produce a warning. Warnings come in two severities:
 
-- In `--check` mode: red `✗` markers under the affected flow
-- In migration mode: yellow `⚠` warnings on stderr, file is still written
+| Severity | Example | Effect on 2.0 |
+|----------|---------|---------------|
+| **v2-incompatible** (red `✗`) | a removed type such as `MultipleCondition` or `EachSequential`, flow-level `pluginDefaults`, a Schedule trigger missing an input | Kestra 2.0 **rejects the flow** — it cannot be deployed at all |
+| **advisory** (yellow `⚠`) | `read()` / `fileURI()` using the removed `version=` argument | the flow deploys, but breaks at run time |
 
-These flows must be rewritten manually.
+In `--check` mode both are printed under the affected flow; in migration mode both go to stderr and the file is still written. Either way, these flows must be rewritten manually.
+
+### Keeping a bulk migration deployable (`--disable-v2-incompatible`)
+
+A single v2-incompatible flow fails to deploy, which is easy to miss in a bulk `kestractl flows deploy` over hundreds of files. With `--disable-v2-incompatible`, those flows are instead rewritten into a placeholder that **does** deploy and is visible in the UI:
+
+```yaml
+id: nightly-rollup
+namespace: company.team
+disabled: true
+labels:
+  owner: data-team
+  v2-migration: needs-manual-rewrite
+description: |
+  [kestra-migrate] NEEDS MANUAL REWRITE
+
+  This flow is not compatible with Kestra 2.0 and was disabled by
+  kestra-migrate. Kestra 2.0 rejects it because:
+    - each uses io.kestra.plugin.core.flow.EachSequential (removed in v2; ...)
+  ...
+tasks:
+  - id: needs_manual_rewrite
+    type: io.kestra.plugin.core.log.Log
+    message: This flow was not migrated to Kestra 2.0 automatically. See the flow description.
+
+# ---------------------------------------------------------------------------
+# Original definition below, migrated as far as kestra-migrate could take it.
+# ...
+```
+
+Nothing is lost: the migrated definition is kept as comments (Kestra stores flow source verbatim, so it survives UI edits and Git sync), existing labels and the flow's own description are preserved, and the whole set is one label filter away in the UI. Re-running the tool over its own output is a no-op.
+
+Flows carrying only advisory warnings are left alone. The flag cannot be combined with `--stay-v1-compatible`.
 
 ## Validate and deploy with kestractl
 

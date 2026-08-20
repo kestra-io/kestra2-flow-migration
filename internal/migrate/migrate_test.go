@@ -22,11 +22,27 @@ func apply(t *testing.T, in string) string {
 // applyWithWarnings is a test helper that returns both output and warnings.
 func applyWithWarnings(t *testing.T, in string) (string, []string) {
 	t.Helper()
-	out, warnings, err := Apply([]byte(in))
+	out, warnings := applyWithWarningDetails(t, in)
+	return out, warningMessages(warnings)
+}
+
+// applyWithWarningDetails is applyWithWarnings without dropping the severity.
+func applyWithWarningDetails(t *testing.T, in string, opts ...Option) (string, []Warning) {
+	t.Helper()
+	out, warnings, err := Apply([]byte(in), opts...)
 	if err != nil {
 		t.Fatalf("Apply error: %v", err)
 	}
 	return string(out), warnings
+}
+
+// warningMessages flattens warnings to their messages.
+func warningMessages(warnings []Warning) []string {
+	out := make([]string, 0, len(warnings))
+	for _, w := range warnings {
+		out = append(out, w.Message)
+	}
+	return out
 }
 
 // hasWarningContaining reports whether any warning contains substr.
@@ -367,7 +383,7 @@ tasks:
 	if strings.Contains(got, "forced") {
 		t.Errorf("StayV1Compatible should still strip forced; got:\n%s", got)
 	}
-	if hasWarningContaining(warnings, "must be rewritten manually") {
+	if hasWarningContaining(warningMessages(warnings), "must be rewritten manually") {
 		t.Errorf("no manual-rewrite warning expected under StayV1Compatible, got: %v", warnings)
 	}
 }
@@ -3730,7 +3746,7 @@ triggers:
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if warningsContain(warnings, "does not supply input") {
+	if warningsContain(warningMessages(warnings), "does not supply input") {
 		t.Errorf("StayV1Compatible must not emit the v2-only trigger-input warning; got: %v", warnings)
 	}
 }
