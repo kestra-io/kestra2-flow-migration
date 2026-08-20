@@ -30,8 +30,13 @@ const (
 	// stubTaskID is the placeholder task's id. A task is required because
 	// `Flow.tasks` is `@NotEmpty` — a flow whose body is entirely commented out
 	// does not parse, so its disabled/labelled state would never be visible.
-	stubTaskID   = "needs_manual_rewrite"
-	stubTaskType = "io.kestra.plugin.core.log.Log"
+	//
+	// It is a `Fail`, not a `Log`: should anyone re-enable the flow before
+	// rewriting it, the execution must end in FAILED rather than quietly
+	// succeed on a placeholder that does nothing.
+	stubTaskID      = "needs_manual_rewrite"
+	stubTaskType    = "io.kestra.plugin.core.execution.Fail"
+	stubTaskMessage = "This flow was not migrated to Kestra 2.0 automatically. See the flow description."
 )
 
 // disableFlow rewrites a flow that Kestra 2.0 would reject into a deployable
@@ -159,7 +164,7 @@ func stubTasks() *yaml.Node {
 	task := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	addStringKey(task, "id", stubTaskID)
 	addStringKey(task, "type", stubTaskType)
-	addStringKey(task, "message", "This flow was not migrated to Kestra 2.0 automatically. See the flow description.")
+	addStringKey(task, "errorMessage", stubTaskMessage)
 	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{task}}
 }
 

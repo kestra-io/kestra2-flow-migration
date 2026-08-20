@@ -155,7 +155,7 @@ Beyond removed types, `detectMissingTriggerInputs()` emits a **semantic** valida
 
 ### `--disable-v2-incompatible`
 
-Opt-in output mode (`migrate.DisableV2Incompatible()`, `internal/migrate/disable.go`). Flows with at least one `V2Incompatible` warning are rewritten into a deployable placeholder: `disabled: true`, the label `v2-migration: needs-manual-rewrite`, the reasons prepended to `description` under a `[kestra-migrate] NEEDS MANUAL REWRITE` marker, a stub `Log` task, and the migrated definition appended as a comment block.
+Opt-in output mode (`migrate.DisableV2Incompatible()`, `internal/migrate/disable.go`). Flows with at least one `V2Incompatible` warning are rewritten into a deployable placeholder: `disabled: true`, the label `v2-migration: needs-manual-rewrite`, the reasons prepended to `description` under a `[kestra-migrate] NEEDS MANUAL REWRITE` marker, a stub `Fail` task, and the migrated definition appended as a comment block.
 
 Constraints that shape the output — all verified against `releases/v2.0.x`:
 

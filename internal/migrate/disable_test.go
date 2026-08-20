@@ -40,9 +40,9 @@ type disabledFlow struct {
 	Labels      map[string]string `yaml:"labels"`
 	Description string            `yaml:"description"`
 	Tasks       []struct {
-		ID      string `yaml:"id"`
-		Type    string `yaml:"type"`
-		Message string `yaml:"message"`
+		ID           string `yaml:"id"`
+		Type         string `yaml:"type"`
+		ErrorMessage string `yaml:"errorMessage"`
 	} `yaml:"tasks"`
 	Triggers []any `yaml:"triggers"`
 	Inputs   []any `yaml:"inputs"`
@@ -81,8 +81,10 @@ func TestDisableV2IncompatibleRewritesFlow(t *testing.T) {
 	if len(f.Tasks) != 1 || f.Tasks[0].ID != stubTaskID || f.Tasks[0].Type != stubTaskType {
 		t.Errorf("expected the single placeholder task, got: %+v", f.Tasks)
 	}
-	if f.Tasks[0].Message == "" {
-		t.Error("the placeholder Log task needs a message (it is @NotNull)")
+	// A Fail, so that re-enabling the flow before rewriting it ends in FAILED
+	// rather than a green execution that did nothing.
+	if f.Tasks[0].ErrorMessage != stubTaskMessage {
+		t.Errorf("the placeholder Fail task must explain itself, got: %q", f.Tasks[0].ErrorMessage)
 	}
 	if f.Triggers != nil || f.Inputs != nil {
 		t.Errorf("triggers and inputs must be commented out, got triggers=%v inputs=%v", f.Triggers, f.Inputs)
