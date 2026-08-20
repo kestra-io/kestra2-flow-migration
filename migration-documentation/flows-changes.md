@@ -159,7 +159,7 @@ Warnings emitted by the migrator fall into two severities, decided by whether Ke
 - `disabled: true` is set — a disabled flow pauses its triggers and rejects new executions;
 - the label `v2-migration: needs-manual-rewrite` is added, so the whole set is one label filter away in the UI. Existing labels are preserved (in whichever shape they use — 2.0 accepts both a map and a list of `key`/`value` pairs);
 - the reason for each warning is prepended to the flow `description`, under a `[kestra-migrate] NEEDS MANUAL REWRITE` marker; an existing description is preserved below a `--- original description ---` separator;
-- a placeholder `io.kestra.plugin.core.log.Log` task with id `needs_manual_rewrite` is emitted, because `Flow.tasks` is `@NotEmpty` — a flow with no tasks would not parse, and the disabled/labelled state would never become visible.
+- a placeholder `io.kestra.plugin.core.execution.Fail` task with id `needs_manual_rewrite` is emitted, because `Flow.tasks` is `@NotEmpty` — a flow with no tasks would not parse, and the disabled/labelled state would never become visible. It fails rather than logs, so that a flow re-enabled before it is rewritten ends in `FAILED` instead of succeeding on a placeholder that does nothing.
 
 Triggers are commented out along with the rest of the body. `disabled: true` already pauses them; the reason they cannot simply be left in place is that a trigger holding a removed type or a v1 `conditions:` block fails to deserialize.
 

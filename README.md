@@ -112,8 +112,8 @@ description: |
   ...
 tasks:
   - id: needs_manual_rewrite
-    type: io.kestra.plugin.core.log.Log
-    message: This flow was not migrated to Kestra 2.0 automatically. See the flow description.
+    type: io.kestra.plugin.core.execution.Fail
+    errorMessage: This flow was not migrated to Kestra 2.0 automatically. See the flow description.
 
 # ---------------------------------------------------------------------------
 # Original definition below, migrated as far as kestra-migrate could take it.
