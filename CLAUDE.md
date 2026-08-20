@@ -141,7 +141,9 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 
 ### Removed type detection (validation warnings)
 
-`Apply()` returns `([]byte, []string, error)` — the `[]string` contains validation warnings for types removed in v2 with no automated replacement. These flows are still written but flagged for manual rewrite. Detected via the `removedTypes` map and `detectRemovedTypes()`.
+`Apply()` returns `([]byte, []Warning, error)`. A `Warning` is a message plus a `V2Incompatible` flag: `true` when Kestra 2.0 **rejects the flow on save** (unknown type or property — `YamlParser` sets `FAIL_ON_UNKNOWN_PROPERTIES = true` — or a `FlowValidator` violation), `false` when the flow deploys and breaks at run time. Detectors keep returning `[]string`; `Apply` tags them via `v2Incompatible(...)` / `advisory(...)`. Only `detectPebbleVersionArg` is advisory today.
+
+Warnings cover types removed in v2 with no automated replacement; those flows are still written, but flagged for manual rewrite. Detected via the `removedTypes` map and `detectRemovedTypes()`.
 
 Detected types: `MultipleCondition`, `Count`, `Resume`, `Toggle`, `git.Push`, `nashorn.Eval`, `nashorn.FileTransform`, and the flow-iteration types removed in favor of `Loop` (`ForEach`, `ForEachItem`, `EachSequential`, `EachParallel` — both old `io.kestra.core.tasks.flows.*` and new `io.kestra.plugin.core.flow.*` paths; warning-only, no auto-transform).
 
@@ -150,6 +152,19 @@ Detected types: `MultipleCondition`, `Count`, `Resume`, `Toggle`, `git.Push`, `n
 `detectPebbleVersionArg()` flags Pebble `read()`/`fileURI()` calls using the removed `version=` named argument (renamed to `revision` in v2 with **no fallback**, kestra PR #16699 / rc3). Warning-only — rewriting inside arbitrary expressions could corrupt embedded script code. Gated to the v2 path.
 
 Beyond removed types, `detectMissingTriggerInputs()` emits a **semantic** validation warning: a `Schedule` trigger that fails to supply every flow input lacking a `defaults` (`prefill` / `required: false` do not count) — v2 rejects these with "Missing inputs for Schedule Trigger". Inputs gated by a `dependsOn` are skipped (conditionally required). Not auto-fixable (values can't be invented); gated to the v2 path (skipped under `--stay-v1-compatible`). Called from `Apply()` alongside `detectRemovedTypes`.
+
+### `--disable-v2-incompatible`
+
+Opt-in output mode (`migrate.DisableV2Incompatible()`, `internal/migrate/disable.go`). Flows with at least one `V2Incompatible` warning are rewritten into a deployable placeholder: `disabled: true`, the label `v2-migration: needs-manual-rewrite`, the reasons prepended to `description` under a `[kestra-migrate] NEEDS MANUAL REWRITE` marker, a stub `Log` task, and the migrated definition appended as a comment block.
+
+Constraints that shape the output — all verified against `releases/v2.0.x`:
+
+- `Flow.tasks` is `@NotEmpty`, so a fully commented-out flow does not parse and its disabled/labelled state never becomes visible → the stub task is mandatory.
+- Label keys are validated against `^[\p{Ll}][\p{L}0-9._-]*$` (`Label.java`), so the marker must be the pair `v2-migration: needs-manual-rewrite`, never one `key:value` string.
+- Labels accept both map and list-of-`key`/`value` shapes (`ListOrMapOfLabelDeserializer`); `labelsWithMigrationLabel` mirrors whichever the flow already uses.
+- yaml.v3 downgrades a `|` literal scalar to a `\n`-escaped double-quoted string when any line has trailing whitespace, hence `trimLineEnds` on the generated description. (Non-ASCII in a literal scalar is fine — the emoji problem described above applies to round-tripped block scalars, not to ones we construct.)
+
+Idempotent by construction: a disabled flow has no live incompatible construct left, so it produces no warning and never re-enters `disableFlow`. Rejected together with `--stay-v1-compatible`.
 
 ### Not yet automated (require manual migration)
 

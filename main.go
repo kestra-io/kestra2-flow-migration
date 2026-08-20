@@ -22,6 +22,7 @@ func main() {
 	var outDir string
 	var check bool
 	var stayV1Compatible bool
+	var disableV2Incompatible bool
 
 	root := &cobra.Command{
 		Use:     "kestra-migrate [flags] <file.yml|dir>...",
@@ -38,7 +39,12 @@ changes. Exits with code 1 if any flows need migration.
 
 Use --stay-v1-compatible to skip migration rules whose output is not valid
 on a v1.3 Kestra instance (see migration-documentation/flows-changes.md
-"v2-only compatible changes").`,
+"v2-only compatible changes").
+
+Use --disable-v2-incompatible to keep a bulk migration deployable: flows that
+Kestra 2.0 would reject are rewritten into a disabled placeholder labelled
+v2-migration: needs-manual-rewrite, with their original definition preserved
+as comments.`,
 		Args:          cobra.MinimumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -48,9 +54,16 @@ on a v1.3 Kestra instance (see migration-documentation/flows-changes.md
 				return err
 			}
 
+			if stayV1Compatible && disableV2Incompatible {
+				return fmt.Errorf("--disable-v2-incompatible describes a v2 deployment and cannot be combined with --stay-v1-compatible")
+			}
+
 			var opts []migrate.Option
 			if stayV1Compatible {
 				opts = append(opts, migrate.StayV1Compatible())
+			}
+			if disableV2Incompatible {
+				opts = append(opts, migrate.DisableV2Incompatible())
 			}
 
 			if check {
@@ -69,6 +82,9 @@ on a v1.3 Kestra instance (see migration-documentation/flows-changes.md
 				for _, warn := range warnings {
 					fmt.Fprintf(os.Stderr, "\033[33m⚠  %s: %s\033[0m\n", f.Name, warn)
 				}
+				if disableV2Incompatible && migrate.HasV2Incompatible(warnings) {
+					fmt.Fprintf(os.Stderr, "\033[33m→  %s: disabled and labelled %s\033[0m\n", f.Name, "v2-migration: needs-manual-rewrite")
+				}
 			}
 			return nil
 		},
@@ -77,6 +93,7 @@ on a v1.3 Kestra instance (see migration-documentation/flows-changes.md
 	root.Flags().StringVarP(&outDir, "out", "o", "", "output directory (default: stdout)")
 	root.Flags().BoolVar(&check, "check", false, "show migration status for each flow (green tick if v2-compatible, diff if not)")
 	root.Flags().BoolVar(&stayV1Compatible, "stay-v1-compatible", false, "skip migration rules whose output is not valid on a v1.3 Kestra instance")
+	root.Flags().BoolVar(&disableV2Incompatible, "disable-v2-incompatible", false, "rewrite flows Kestra 2.0 would reject into a disabled placeholder labelled v2-migration: needs-manual-rewrite, keeping the original definition as comments")
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -116,7 +133,11 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 			fmt.Print(diff)
 		}
 		for _, warn := range warnings {
-			fmt.Printf("\033[31m  ✗ %s\033[0m\n", warn)
+			if warn.V2Incompatible {
+				fmt.Printf("\033[31m  ✗ %s\033[0m\n", warn)
+				continue
+			}
+			fmt.Printf("\033[33m  ⚠ %s\033[0m\n", warn)
 		}
 		needsMigration++
 	}
