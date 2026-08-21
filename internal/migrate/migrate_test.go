@@ -1028,6 +1028,66 @@ triggers:
 	}
 }
 
+// `resetOnSuccess: true` is the v2 behavior, so it is dropped and the rest of
+// the block still rewrites.
+func TestApply_FlowTrigger_PreconditionsResetOnSuccessTrue_Dropped(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: after_upstream
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: upstream
+      resetOnSuccess: true
+      flows:
+        - namespace: company.team
+          flowId: flow_a
+          states: [SUCCESS]
+`
+	out, warnings := applyWithWarnings(t, in)
+	if strings.Contains(out, "preconditions:") {
+		t.Error("preconditions should have been consumed")
+	}
+	if strings.Contains(out, "resetOnSuccess") || strings.Contains(out, "fireOnce") {
+		t.Errorf("resetOnSuccess must not survive the rewrite:\n%s", out)
+	}
+	for _, want := range []string{"dependsOn:", "flowId: flow_a"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got: %v", warnings)
+	}
+}
+
+// `resetOnSuccess: false` has no v2 equivalent, so the rewrite is refused and
+// the flow is left for manual review.
+func TestApply_FlowTrigger_PreconditionsResetOnSuccessFalse_WarnsInstead(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: after_upstream
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: upstream
+      resetOnSuccess: false
+      flows:
+        - namespace: company.team
+          flowId: flow_a
+          states: [SUCCESS]
+`
+	out, warnings := applyWithWarnings(t, in)
+	if !strings.Contains(out, "preconditions:") {
+		t.Error("must not rewrite when resetOnSuccess is false — needs manual review")
+	}
+	if len(warnings) == 0 {
+		t.Error("expected a warning for resetOnSuccess: false")
+	}
+}
+
 // Top-level `states:` + matching per-flow `states:` in preconditions.flows
 // is a redundant but legal v1 shape. Values are equal — collapse to a single
 // states field on the entry rather than refusing.

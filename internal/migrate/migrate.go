@@ -1454,7 +1454,8 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 //   - `timeWindow:`        optional; only `DAILY_TIME_DEADLINE` is mapped
 //     (top-level `window: {deadline: ...}`).
 //   - `id:`                dropped.
-//   - any other key (e.g. `where`, `resetOnSuccess`) → refuse.
+//   - `resetOnSuccess: true` dropped (v2 always resets); `false` → refuse.
+//   - any other key → refuse.
 //
 // A bare-`ExecutionStatus` trigger (no `preconditions`) produces a
 // `states:`-only entry — v1's "fire on any upstream execution with these
@@ -1465,7 +1466,7 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 // unsupported condition type is present; an existing `dependsOn:` is on the
 // trigger; a top-level `timeWindow:` is on the trigger (rare v1 shape);
 // a `preconditions.flows` entry conflicts with `states:` on the trigger or
-// any condition; a condition in `conditions` would set a per-flow field
+// any condition; `preconditions.resetOnSuccess` is set to `false`; a condition in `conditions` would set a per-flow field
 // (ExecutionFlow / exact ExecutionNamespace / ExecutionLabels) while
 // `preconditions.flows` is also present; or any non-flows preconditions
 // key other than `id`/`timeWindow` appears.
@@ -1760,8 +1761,10 @@ type preconditionsInfo struct {
 // `preconditions:` mapping: exactly one of `flows` (sequence of
 // {namespace, flowId, states?}) or `where` (v1 filter-predicate list), plus
 // optional `timeWindow` (only DAILY_TIME_DEADLINE is mapped) and `id`
-// (dropped). Any other key — `resetOnSuccess`, both `flows` and `where` at
-// once, or an unsupported filter shape inside `where` — causes refusal.
+// (dropped), plus `resetOnSuccess: true` (dropped, since v2 always resets after
+// the trigger has fired). Any other key — `resetOnSuccess: false`, both `flows`
+// and `where` at once, or an unsupported filter shape inside `where` — causes
+// refusal.
 func parsePreconditions(p *yaml.Node) (preconditionsInfo, bool) {
 	var info preconditionsInfo
 	if p.Kind != yaml.MappingNode {
@@ -1773,6 +1776,13 @@ func parsePreconditions(p *yaml.Node) (preconditionsInfo, bool) {
 		switch key {
 		case "id":
 			// Dropped per v2 migration guide.
+		case "resetOnSuccess":
+			// v2 always resets after the trigger has fired, so an explicit `true` is
+			// the new behavior and is dropped. `false` has no equivalent — it needs
+			// `mode: ANY` — so the rewrite is refused and left as a warning.
+			if val.Kind != yaml.ScalarNode || val.Value != "true" {
+				return info, false
+			}
 		case "flows":
 			if val.Kind != yaml.SequenceNode || len(val.Content) == 0 {
 				return info, false
