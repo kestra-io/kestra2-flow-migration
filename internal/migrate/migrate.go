@@ -825,7 +825,8 @@ func detectPebbleVersionArg(doc *yaml.Node) []string {
 // already reported as a removed type, so it is left out to avoid a double
 // warning.
 //
-// Verified against plugin-git `main` (2026-08-28): each of these reaches
+// Verified against plugin-git and plugin-ee-git `main` (2026-08-28): each of
+// these reaches
 // `AbstractCloningTask.kestraClient()` unconditionally in `run()`.
 // `io.kestra.plugin.git.SyncNamespaceFiles` is deliberately absent — it moves
 // files through `runContext.storage()`, which the worker can reach without the
@@ -840,6 +841,23 @@ var sdkAuthTypes = map[string]bool{
 	"io.kestra.plugin.git.NamespaceSync":  true,
 	"io.kestra.plugin.git.TenantSync":     true,
 	"io.kestra.plugin.ai.KestraFlow":      true,
+
+	// plugin-ee-git. These live under `io.kestra.plugin.ee.git.*` and inherit
+	// the same `auth` property (via the EE copy of
+	// `io.kestra.plugin.git.AbstractKestraTask`), so the suppression below
+	// works on them unchanged. There is no alias between plugin-git and
+	// plugin-ee-git — neither repo has ever carried a `@Plugin(aliases = ...)`
+	// for these — so the EE types have to be listed explicitly.
+	// `io.kestra.plugin.ee.git.Clone` is deliberately absent: it makes no API
+	// call. Note `io.kestra.plugin.git.NamespaceSync` / `TenantSync` above are
+	// shipped by *both* plugin-git and plugin-ee-git under the identical FQN,
+	// so the OSS entries already cover the EE build.
+	"io.kestra.plugin.ee.git.SyncApps":       true,
+	"io.kestra.plugin.ee.git.SyncBlueprints": true,
+	"io.kestra.plugin.ee.git.SyncUnitTests":  true,
+	"io.kestra.plugin.ee.git.PushApps":       true,
+	"io.kestra.plugin.ee.git.PushBlueprints": true,
+	"io.kestra.plugin.ee.git.PushUnitTests":  true,
 }
 
 // sdkAuthConditional maps a task type to the property that, when true, is what

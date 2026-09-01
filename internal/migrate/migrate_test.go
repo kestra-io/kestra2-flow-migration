@@ -3928,3 +3928,51 @@ tasks:
 		t.Errorf("expected removed-type warning for git.Push, got %v", warnings)
 	}
 }
+
+func TestDetectSdkAuthEEGitTasks(t *testing.T) {
+	for _, typ := range []string{
+		"io.kestra.plugin.ee.git.SyncApps",
+		"io.kestra.plugin.ee.git.SyncBlueprints",
+		"io.kestra.plugin.ee.git.SyncUnitTests",
+		"io.kestra.plugin.ee.git.PushApps",
+		"io.kestra.plugin.ee.git.PushBlueprints",
+		"io.kestra.plugin.ee.git.PushUnitTests",
+	} {
+		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
+		_, warnings := applyWithWarnings(t, in)
+		if !hasWarningContaining(warnings, "requires SDK authentication") {
+			t.Errorf("%s: expected SDK auth warning, got %v", typ, warnings)
+		}
+	}
+}
+
+// ee.git.Clone only clones into the working directory; no Kestra API call.
+func TestDetectSdkAuthEEGitCloneNotFlagged(t *testing.T) {
+	in := `id: clone
+namespace: dev
+tasks:
+  - id: clone
+    type: io.kestra.plugin.ee.git.Clone
+    url: https://github.com/kestra-io/flows
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning for ee.git.Clone, got %v", warnings)
+	}
+}
+
+// EE tasks inherit `auth` from the EE copy of AbstractKestraTask.
+func TestDetectSdkAuthEEGitSuppressedByAuth(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.ee.git.SyncApps
+    auth:
+      apiToken: "{{ secret('KESTRA_API_TOKEN') }}"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning when auth is set, got %v", warnings)
+	}
+}
