@@ -3750,3 +3750,229 @@ triggers:
 		t.Errorf("StayV1Compatible must not emit the v2-only trigger-input warning; got: %v", warnings)
 	}
 }
+
+func TestDetectSdkAuthGitSyncFlows(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncFlows
+    url: https://github.com/kestra-io/flows
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSkippedWhenAuthPresent(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncFlows
+    auth:
+      url: http://webserver:8080
+      apiToken: "{{ secret('KESTRA_API_TOKEN') }}"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning when auth is set, got %v", warnings)
+	}
+}
+
+// The Fetch rename moves the task into io.kestra.plugin.kestra.*, which needs auth.
+func TestDetectSdkAuthAfterLogFetchRename(t *testing.T) {
+	in := `id: logs
+namespace: dev
+tasks:
+  - id: fetch
+    type: io.kestra.plugin.core.log.Fetch
+`
+	out, warnings := applyWithWarnings(t, in)
+	if !strings.Contains(out, "io.kestra.plugin.kestra.logs.Fetch") {
+		t.Fatalf("expected type rename, got:\n%s", out)
+	}
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning after rename, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthUnaffectedTypes(t *testing.T) {
+	in := `id: purge
+namespace: dev
+tasks:
+  - id: purge
+    type: io.kestra.plugin.core.execution.PurgeExecutions
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hello
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSkippedUnderV1Compatible(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncFlows
+`
+	_, warnings := applyWithWarningDetails(t, in, StayV1Compatible())
+	if hasWarningContaining(warningMessages(warnings), "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning under --stay-v1-compatible, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthIsAdvisory(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.ai.KestraFlow
+`
+	_, warnings := applyWithWarningDetails(t, in)
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w.Message, "requires SDK authentication") {
+			found = true
+			if w.V2Incompatible {
+				t.Errorf("SDK auth warning should be advisory, got V2Incompatible=true")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected SDK auth warning, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSyncNamespaceFilesNotFlaggedByDefault(t *testing.T) {
+	// SyncNamespaceFiles moves files through internal storage, which the worker
+	// reaches without the Kestra API.
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    url: https://github.com/kestra-io/flows
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning for storage-only SyncNamespaceFiles, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSyncNamespaceFilesWithChildNamespaces(t *testing.T) {
+	// includeChildNamespaces: true routes through descendantNamespaces(), which
+	// calls the namespaces API.
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    includeChildNamespaces: true
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning with includeChildNamespaces: true, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSyncNamespaceFilesTemplatedChildNamespaces(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    includeChildNamespaces: "{{ inputs.children }}"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning for templated includeChildNamespaces, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthOtherGitApiTasks(t *testing.T) {
+	for _, typ := range []string{
+		"io.kestra.plugin.git.SyncFlow",
+		"io.kestra.plugin.git.Sync",
+		"io.kestra.plugin.git.SyncDashboards",
+		"io.kestra.plugin.git.PushFlows",
+		"io.kestra.plugin.git.PushDashboards",
+		"io.kestra.plugin.git.TenantSync",
+	} {
+		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
+		_, warnings := applyWithWarnings(t, in)
+		if !hasWarningContaining(warnings, "requires SDK authentication") {
+			t.Errorf("%s: expected SDK auth warning, got %v", typ, warnings)
+		}
+	}
+}
+
+// git.Push already reports as a removed type; no double warning.
+func TestDetectSdkAuthGitPushNotDoubleFlagged(t *testing.T) {
+	in := `id: push
+namespace: dev
+tasks:
+  - id: push
+    type: io.kestra.plugin.git.Push
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning on git.Push, got %v", warnings)
+	}
+	if !hasWarningContaining(warnings, "git.Push") {
+		t.Errorf("expected removed-type warning for git.Push, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthEEGitTasks(t *testing.T) {
+	for _, typ := range []string{
+		"io.kestra.plugin.ee.git.SyncApps",
+		"io.kestra.plugin.ee.git.SyncBlueprints",
+		"io.kestra.plugin.ee.git.SyncUnitTests",
+		"io.kestra.plugin.ee.git.PushApps",
+		"io.kestra.plugin.ee.git.PushBlueprints",
+		"io.kestra.plugin.ee.git.PushUnitTests",
+	} {
+		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
+		_, warnings := applyWithWarnings(t, in)
+		if !hasWarningContaining(warnings, "requires SDK authentication") {
+			t.Errorf("%s: expected SDK auth warning, got %v", typ, warnings)
+		}
+	}
+}
+
+// ee.git.Clone only clones into the working directory; no Kestra API call.
+func TestDetectSdkAuthEEGitCloneNotFlagged(t *testing.T) {
+	in := `id: clone
+namespace: dev
+tasks:
+  - id: clone
+    type: io.kestra.plugin.ee.git.Clone
+    url: https://github.com/kestra-io/flows
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning for ee.git.Clone, got %v", warnings)
+	}
+}
+
+// EE tasks inherit `auth` from the EE copy of AbstractKestraTask.
+func TestDetectSdkAuthEEGitSuppressedByAuth(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.ee.git.SyncApps
+    auth:
+      apiToken: "{{ secret('KESTRA_API_TOKEN') }}"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning when auth is set, got %v", warnings)
+	}
+}

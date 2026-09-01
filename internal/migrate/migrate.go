@@ -149,6 +149,9 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
 		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc))...)
+		// Tasks calling the Kestra API need credentials on v2; advisory because
+		// they may already be configured at namespace/tenant or server level.
+		warnings = append(warnings, advisory(detectSdkAuth(&doc))...)
 		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
 		// mechanical replacement — warning-only, like the flow-iteration types.
 		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc))...)
@@ -812,6 +815,96 @@ func detectPebbleVersionArg(doc *yaml.Node) []string {
 		}
 	}
 	walk(doc)
+	return warnings
+}
+
+// sdkAuthTypes are the exact task types that call the Kestra API through the
+// SDK on every run and therefore require credentials in v2. Every
+// `io.kestra.plugin.kestra.*` task is covered by the prefix check in
+// detectSdkAuth instead. `io.kestra.plugin.git.Push` also calls the API but is
+// already reported as a removed type, so it is left out to avoid a double
+// warning.
+//
+// Verified against plugin-git and plugin-ee-git `main` (2026-08-28): each of
+// these reaches
+// `AbstractCloningTask.kestraClient()` unconditionally in `run()`.
+// `io.kestra.plugin.git.SyncNamespaceFiles` is deliberately absent — it moves
+// files through `runContext.storage()`, which the worker can reach without the
+// API; see sdkAuthConditional.
+var sdkAuthTypes = map[string]bool{
+	"io.kestra.plugin.git.SyncFlows":      true,
+	"io.kestra.plugin.git.SyncFlow":       true,
+	"io.kestra.plugin.git.Sync":           true,
+	"io.kestra.plugin.git.SyncDashboards": true,
+	"io.kestra.plugin.git.PushFlows":      true,
+	"io.kestra.plugin.git.PushDashboards": true,
+	"io.kestra.plugin.git.NamespaceSync":  true,
+	"io.kestra.plugin.git.TenantSync":     true,
+	"io.kestra.plugin.ai.KestraFlow":      true,
+
+	// plugin-ee-git. These live under `io.kestra.plugin.ee.git.*` and inherit
+	// the same `auth` property (via the EE copy of
+	// `io.kestra.plugin.git.AbstractKestraTask`), so the suppression below
+	// works on them unchanged. There is no alias between plugin-git and
+	// plugin-ee-git — neither repo has ever carried a `@Plugin(aliases = ...)`
+	// for these — so the EE types have to be listed explicitly.
+	// `io.kestra.plugin.ee.git.Clone` is deliberately absent: it makes no API
+	// call. Note `io.kestra.plugin.git.NamespaceSync` / `TenantSync` above are
+	// shipped by *both* plugin-git and plugin-ee-git under the identical FQN,
+	// so the OSS entries already cover the EE build.
+	"io.kestra.plugin.ee.git.SyncApps":       true,
+	"io.kestra.plugin.ee.git.SyncBlueprints": true,
+	"io.kestra.plugin.ee.git.SyncUnitTests":  true,
+	"io.kestra.plugin.ee.git.PushApps":       true,
+	"io.kestra.plugin.ee.git.PushBlueprints": true,
+	"io.kestra.plugin.ee.git.PushUnitTests":  true,
+}
+
+// sdkAuthConditional maps a task type to the property that, when true, is what
+// drives it to the Kestra API. `SyncNamespaceFiles` reads and writes namespace
+// files via internal storage; only `includeChildNamespaces: true` sends it
+// through `descendantNamespaces()` → `client.namespaces().searchNamespaces()`.
+// The property defaults to false, so an unset value is not flagged.
+var sdkAuthConditional = map[string]string{
+	"io.kestra.plugin.git.SyncNamespaceFiles": "includeChildNamespaces",
+}
+
+const sdkAuthPrefix = "io.kestra.plugin.kestra."
+
+// detectSdkAuth flags tasks that call the Kestra API internally and carry no
+// inline `auth:` block. These calls were unauthenticated on v1.3 and fail with
+// 401 on v2 unless credentials are supplied — inline, or via namespace/tenant
+// defaults (EE) or the server config, neither of which is visible from the flow
+// file. Hence advisory, not v2-incompatible: the flow still deploys.
+//
+// Note `auth` on a git task is the *Kestra API* credential block
+// (`AbstractCloningTask.auth`, "Kestra API authentication"); Git remote
+// credentials are the separate `username` / `password` / `privateKey`
+// properties on `AbstractGitTask`, so keying off `auth:` does not
+// mis-suppress a flow that only authenticates against Git.
+// (flows-changes.md: Tasks calling the Kestra API now require SDK authentication)
+func detectSdkAuth(doc *yaml.Node) []string {
+	var warnings []string
+	walkMappings(docRoot(doc), func(m *yaml.Node) {
+		t := stringValue(m, "type")
+		if t == "" {
+			return
+		}
+		needsAuth := sdkAuthTypes[t] || strings.HasPrefix(t, sdkAuthPrefix)
+		if prop, ok := sdkAuthConditional[t]; ok {
+			// A templated value can't be resolved statically; flag it, since the
+			// task reaches the API whenever it renders true.
+			v := stringValue(m, prop)
+			needsAuth = v == "true" || strings.Contains(v, "{{")
+		}
+		if !needsAuth {
+			return
+		}
+		if mappingValue(m, "auth") != nil {
+			return
+		}
+		warnings = append(warnings, fmt.Sprintf("line %d: `%s` calls the Kestra API and requires SDK authentication in v2 — add an `auth:` block, or configure credentials at namespace/tenant or server level", m.Line, t))
+	})
 	return warnings
 }
 
