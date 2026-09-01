@@ -3848,3 +3848,83 @@ tasks:
 		t.Errorf("expected SDK auth warning, got %v", warnings)
 	}
 }
+
+func TestDetectSdkAuthSyncNamespaceFilesNotFlaggedByDefault(t *testing.T) {
+	// SyncNamespaceFiles moves files through internal storage, which the worker
+	// reaches without the Kestra API.
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    url: https://github.com/kestra-io/flows
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning for storage-only SyncNamespaceFiles, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSyncNamespaceFilesWithChildNamespaces(t *testing.T) {
+	// includeChildNamespaces: true routes through descendantNamespaces(), which
+	// calls the namespaces API.
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    includeChildNamespaces: true
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning with includeChildNamespaces: true, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthSyncNamespaceFilesTemplatedChildNamespaces(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncNamespaceFiles
+    includeChildNamespaces: "{{ inputs.children }}"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning for templated includeChildNamespaces, got %v", warnings)
+	}
+}
+
+func TestDetectSdkAuthOtherGitApiTasks(t *testing.T) {
+	for _, typ := range []string{
+		"io.kestra.plugin.git.SyncFlow",
+		"io.kestra.plugin.git.Sync",
+		"io.kestra.plugin.git.SyncDashboards",
+		"io.kestra.plugin.git.PushFlows",
+		"io.kestra.plugin.git.PushDashboards",
+		"io.kestra.plugin.git.TenantSync",
+	} {
+		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
+		_, warnings := applyWithWarnings(t, in)
+		if !hasWarningContaining(warnings, "requires SDK authentication") {
+			t.Errorf("%s: expected SDK auth warning, got %v", typ, warnings)
+		}
+	}
+}
+
+// git.Push already reports as a removed type; no double warning.
+func TestDetectSdkAuthGitPushNotDoubleFlagged(t *testing.T) {
+	in := `id: push
+namespace: dev
+tasks:
+  - id: push
+    type: io.kestra.plugin.git.Push
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected no SDK auth warning on git.Push, got %v", warnings)
+	}
+	if !hasWarningContaining(warnings, "git.Push") {
+		t.Errorf("expected removed-type warning for git.Push, got %v", warnings)
+	}
+}
