@@ -88,7 +88,7 @@ Flows using constructs the tool cannot rewrite are still migrated as far as poss
 | Severity | Example | Effect on 2.0 |
 |----------|---------|---------------|
 | **v2-incompatible** (red `✗`) | a removed type such as `MultipleCondition` or `EachSequential`, flow-level `pluginDefaults`, a Schedule trigger missing an input | Kestra 2.0 **rejects the flow** — it cannot be deployed at all |
-| **advisory** (yellow `⚠`) | `read()` / `fileURI()` using the removed `version=` argument | the flow deploys, but breaks at run time |
+| **advisory** (yellow `⚠`) | `read()` / `fileURI()` using the removed `version=` argument; tasks requiring SDK authentication (Git sync, `io.kestra.plugin.kestra.*`, `ai.KestraFlow`) with no inline `auth:` | the flow deploys, but breaks at run time |
 
 In `--check` mode both are printed under the affected flow; in migration mode both go to stderr and the file is still written. Either way, these flows must be rewritten manually.
 

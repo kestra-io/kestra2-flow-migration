@@ -149,6 +149,9 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
 		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc))...)
+		// Tasks calling the Kestra API need credentials on v2; advisory because
+		// they may already be configured at namespace/tenant or server level.
+		warnings = append(warnings, advisory(detectSdkAuth(&doc))...)
 		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
 		// mechanical replacement — warning-only, like the flow-iteration types.
 		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc))...)
@@ -812,6 +815,42 @@ func detectPebbleVersionArg(doc *yaml.Node) []string {
 		}
 	}
 	walk(doc)
+	return warnings
+}
+
+// sdkAuthTypes are the exact task types that call the Kestra API internally and
+// therefore require SDK credentials in v2. Every `io.kestra.plugin.kestra.*`
+// task is covered by the prefix check in detectSdkAuth instead.
+var sdkAuthTypes = map[string]bool{
+	"io.kestra.plugin.git.SyncFlows":          true,
+	"io.kestra.plugin.git.NamespaceSync":      true,
+	"io.kestra.plugin.git.SyncNamespaceFiles": true,
+	"io.kestra.plugin.ai.KestraFlow":          true,
+}
+
+const sdkAuthPrefix = "io.kestra.plugin.kestra."
+
+// detectSdkAuth flags tasks that call the Kestra API internally and carry no
+// inline `auth:` block. These calls were unauthenticated on v1.3 and fail with
+// 401 on v2 unless credentials are supplied — inline, or via namespace/tenant
+// defaults (EE) or the server config, neither of which is visible from the flow
+// file. Hence advisory, not v2-incompatible: the flow still deploys.
+// (flows-changes.md: Tasks calling the Kestra API now require SDK authentication)
+func detectSdkAuth(doc *yaml.Node) []string {
+	var warnings []string
+	walkMappings(docRoot(doc), func(m *yaml.Node) {
+		t := stringValue(m, "type")
+		if t == "" {
+			return
+		}
+		if !sdkAuthTypes[t] && !strings.HasPrefix(t, sdkAuthPrefix) {
+			return
+		}
+		if mappingValue(m, "auth") != nil {
+			return
+		}
+		warnings = append(warnings, fmt.Sprintf("line %d: `%s` calls the Kestra API and requires SDK authentication in v2 — add an `auth:` block, or configure credentials at namespace/tenant or server level", m.Line, t))
+	})
 	return warnings
 }
 
