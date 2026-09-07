@@ -141,7 +141,9 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 
 ### Removed type detection (validation warnings)
 
-`Apply()` returns `([]byte, []Warning, error)`. A `Warning` is a message plus a `V2Incompatible` flag: `true` when Kestra 2.0 **rejects the flow on save** (unknown type or property — `YamlParser` sets `FAIL_ON_UNKNOWN_PROPERTIES = true` — or a `FlowValidator` violation), `false` when the flow deploys and breaks at run time. Detectors keep returning `[]string`; `Apply` tags them via `v2Incompatible(...)` / `advisory(...)`. `detectPebbleVersionArg` and `detectSdkAuth` are the advisory detectors today.
+`Apply()` returns `([]byte, []Warning, error)`. A `Warning` is a message plus a `V2Incompatible` flag: `true` when Kestra 2.0 **rejects the flow on save** (unknown type or property — `YamlParser` sets `FAIL_ON_UNKNOWN_PROPERTIES = true` — or a `FlowValidator` violation), `false` when the flow deploys and breaks at run time. Detectors keep returning `[]string`; `Apply` tags them via `v2Incompatible(messages, docURL)` / `advisory(messages, docURL)`. `detectPebbleVersionArg` and `detectSdkAuth` are the advisory detectors today.
+
+Every `Warning` also carries a `DocURL` into the official migration guide (`https://kestra.io/docs/migration-guide/v2.0.0`). The `doc*` constants next to the `Warning` type name the dedicated sub-pages (`foreach-loop`, `trigger-conditions-redesign`, `sdk-authentication`, `plugin-defaults-removed`); anything without a sub-page links `DocMigrationGuide`. `detectRemovedTypes` is the one detector returning `[]Warning` directly, because the link depends on the type (`removedTypeDocs`). The CLI prints the link as a dimmed `↳ docs:` line under each warning, and `disabledDescription` adds a `docs:` line under each reason. When a new detector is added, pick its link here — and when the guide gains a sub-page for an existing warning family, add a constant rather than hard-coding the URL at the call site.
 
 Warnings cover types removed in v2 with no automated replacement; those flows are still written, but flagged for manual rewrite. Detected via the `removedTypes` map and `detectRemovedTypes()`.
 

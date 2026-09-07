@@ -63,24 +63,41 @@ type Warning struct {
 	// because of this warning (unknown type or property, or a FlowValidator
 	// violation) as opposed to accepting the flow and breaking at run time.
 	V2Incompatible bool
+
+	// DocURL points at the official Kestra 2.0 migration guide page that
+	// explains the change and how to rewrite the flow by hand. Every warning
+	// carries one: the dedicated sub-page when the guide has one for the
+	// construct, otherwise the guide's landing page.
+	DocURL string
 }
 
 func (w Warning) String() string { return w.Message }
 
+// Official Kestra 2.0 migration guide pages, one per warning family. The
+// landing page is the fallback for changes without a dedicated sub-page
+// (removed core tasks, worker groups, Schedule trigger inputs, …).
+const (
+	DocMigrationGuide    = "https://kestra.io/docs/migration-guide/v2.0.0"
+	docForEachLoop       = DocMigrationGuide + "/foreach-loop"
+	docTriggerConditions = DocMigrationGuide + "/trigger-conditions-redesign"
+	docSDKAuth           = DocMigrationGuide + "/sdk-authentication"
+	docPluginDefaults    = DocMigrationGuide + "/plugin-defaults-removed"
+)
+
 // v2Incompatible tags detector output as "2.0 refuses to save this flow".
-func v2Incompatible(messages []string) []Warning {
-	return warningsOf(messages, true)
+func v2Incompatible(messages []string, docURL string) []Warning {
+	return warningsOf(messages, true, docURL)
 }
 
 // advisory tags detector output as "2.0 saves this flow, but it misbehaves".
-func advisory(messages []string) []Warning {
-	return warningsOf(messages, false)
+func advisory(messages []string, docURL string) []Warning {
+	return warningsOf(messages, false, docURL)
 }
 
-func warningsOf(messages []string, incompatible bool) []Warning {
+func warningsOf(messages []string, incompatible bool, docURL string) []Warning {
 	out := make([]Warning, 0, len(messages))
 	for _, m := range messages {
-		out = append(out, Warning{Message: m, V2Incompatible: incompatible})
+		out = append(out, Warning{Message: m, V2Incompatible: incompatible, DocURL: docURL})
 	}
 	return out
 }
@@ -132,7 +149,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 	// surface via detectRemovedTypes so the user knows manual work is pending.
 	var warnings []Warning
 	if !o.stayV1Compatible {
-		warnings = v2Incompatible(rewriteTriggerConditions(&doc))
+		warnings = v2Incompatible(rewriteTriggerConditions(&doc), docTriggerConditions)
 		// `when` on flow-level `checks` is a v2-only construct (v1.3 uses
 		// `condition`), so this rename is gated alongside the trigger rewrite.
 		renameChecksCondition(&doc)
@@ -141,20 +158,20 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// place (it still parses on v2).
 		migratePurgeKVExpiredOnly(&doc)
 		// `workerSelector` does not exist on v1.3 (EE worker routing).
-		warnings = append(warnings, v2Incompatible(migrateWorkerGroupToWorkerSelector(&doc))...)
+		warnings = append(warnings, v2Incompatible(migrateWorkerGroupToWorkerSelector(&doc), DocMigrationGuide)...)
 		// v2-only validation: Schedule triggers must supply every input lacking
 		// a `defaults`. Warning-only (values can't be invented); a v1-compatible
 		// flow is unaffected, so this is gated to the v2 path.
-		warnings = append(warnings, v2Incompatible(detectMissingTriggerInputs(&doc))...)
+		warnings = append(warnings, v2Incompatible(detectMissingTriggerInputs(&doc), DocMigrationGuide)...)
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
-		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc))...)
+		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc), DocMigrationGuide)...)
 		// Tasks calling the Kestra API need credentials on v2; advisory because
 		// they may already be configured at namespace/tenant or server level.
-		warnings = append(warnings, advisory(detectSdkAuth(&doc))...)
+		warnings = append(warnings, advisory(detectSdkAuth(&doc), docSDKAuth)...)
 		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
 		// mechanical replacement — warning-only, like the flow-iteration types.
-		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc))...)
+		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc), docPluginDefaults)...)
 	} else {
 		// v1.3 still accepts `pluginDefaults`, so under --stay-v1-compatible the
 		// pre-v2 normalization is kept: rename the deprecated `taskDefaults`
@@ -170,7 +187,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		}
 	}
 	// Detect removed types after all rename/rewrite rules have run.
-	warnings = append(warnings, v2Incompatible(detectRemovedTypes(&doc))...)
+	warnings = append(warnings, detectRemovedTypes(&doc)...)
 
 	after, err := marshalYAML(&doc)
 	if err != nil {
@@ -1010,10 +1027,33 @@ var removedTypes = map[string]string{
 // removed in v2 in favor of io.kestra.plugin.core.flow.Loop.
 const loopReplacementReason = "removed in v2; rewrite manually as io.kestra.plugin.core.flow.Loop (taskrun.value→item.value, taskrun.iteration→item.index, declare outputs, AllowFailure→transmitFailed)"
 
+// removedTypeDocs maps a removed type to the migration-guide sub-page that
+// covers its rewrite. Types absent from this map link to the guide landing
+// page, which lists the removed core tasks (Count, Resume, Toggle, …).
+var removedTypeDocs = map[string]string{
+	"io.kestra.plugin.core.condition.MultipleCondition": docTriggerConditions,
+	"io.kestra.plugin.core.flow.ForEach":                docForEachLoop,
+	"io.kestra.plugin.core.flow.ForEachItem":            docForEachLoop,
+	"io.kestra.plugin.core.flow.EachSequential":         docForEachLoop,
+	"io.kestra.plugin.core.flow.EachParallel":           docForEachLoop,
+	"io.kestra.core.tasks.flows.EachSequential":         docForEachLoop,
+	"io.kestra.core.tasks.flows.EachParallel":           docForEachLoop,
+	"io.kestra.core.tasks.flows.ForEachItem":            docForEachLoop,
+}
+
+// removedTypeDoc returns the documentation link for a removed type.
+func removedTypeDoc(typ string) string {
+	if url, ok := removedTypeDocs[typ]; ok {
+		return url
+	}
+	return DocMigrationGuide
+}
+
 // detectRemovedTypes walks the document looking for type values that match
-// entries in removedTypes and returns a warning string for each occurrence.
-func detectRemovedTypes(doc *yaml.Node) []string {
-	var warnings []string
+// entries in removedTypes and returns a v2-incompatible warning for each
+// occurrence, linked to the guide page covering that type.
+func detectRemovedTypes(doc *yaml.Node) []Warning {
+	var warnings []Warning
 	walkMappings(doc, func(m *yaml.Node) {
 		typ := stringValue(m, "type")
 		if reason, ok := removedTypes[typ]; ok {
@@ -1021,7 +1061,11 @@ func detectRemovedTypes(doc *yaml.Node) []string {
 			if id == "" {
 				id = "(unknown)"
 			}
-			warnings = append(warnings, fmt.Sprintf("%s uses %s (%s)", id, typ, reason))
+			warnings = append(warnings, Warning{
+				Message:        fmt.Sprintf("%s uses %s (%s)", id, typ, reason),
+				V2Incompatible: true,
+				DocURL:         removedTypeDoc(typ),
+			})
 		}
 	})
 	return warnings

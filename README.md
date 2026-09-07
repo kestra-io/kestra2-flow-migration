@@ -92,6 +92,18 @@ Flows using constructs the tool cannot rewrite are still migrated as far as poss
 
 In `--check` mode both are printed under the affected flow; in migration mode both go to stderr and the file is still written. Either way, these flows must be rewritten manually.
 
+Every warning is followed by a `↳ docs:` line pointing at the official [Kestra 2.0 migration guide](https://kestra.io/docs/migration-guide/v2.0.0) — the dedicated page when one exists for the construct, otherwise the guide's landing page:
+
+| Warning | Documentation |
+|---------|---------------|
+| `ForEach`, `ForEachItem`, `EachSequential`, `EachParallel` | [ForEach replaced by Loop](https://kestra.io/docs/migration-guide/v2.0.0/foreach-loop) |
+| `MultipleCondition`, trigger `conditions` / `preconditions` / `timeWindow` that could not be rewritten | [Trigger conditions redesign](https://kestra.io/docs/migration-guide/v2.0.0/trigger-conditions-redesign) |
+| flow-level `pluginDefaults` / `taskDefaults` | [pluginDefaults removed](https://kestra.io/docs/migration-guide/v2.0.0/plugin-defaults-removed) |
+| tasks calling the Kestra API without an `auth:` block | [SDK authentication](https://kestra.io/docs/migration-guide/v2.0.0/sdk-authentication) |
+| removed core tasks (`Count`, `Resume`, `Toggle`, …), `workerGroup`, Schedule trigger inputs, Pebble `version=` | [Migration guide landing page](https://kestra.io/docs/migration-guide/v2.0.0) |
+
+Programmatic users get the same link on `migrate.Warning.DocURL`.
+
 ### Keeping a bulk migration deployable (`--disable-v2-incompatible`)
 
 A single v2-incompatible flow fails to deploy, which is easy to miss in a bulk `kestractl flows deploy` over hundreds of files. With `--disable-v2-incompatible`, those flows are instead rewritten into a placeholder that **does** deploy and is visible in the UI:
@@ -109,6 +121,7 @@ description: |
   This flow is not compatible with Kestra 2.0 and was disabled by
   kestra-migrate. Kestra 2.0 rejects it because:
     - each uses io.kestra.plugin.core.flow.EachSequential (removed in v2; ...)
+      docs: https://kestra.io/docs/migration-guide/v2.0.0/foreach-loop
   ...
 tasks:
   - id: needs_manual_rewrite
@@ -168,4 +181,4 @@ Migration rules live in `internal/migrate`. Each rule is a `func(*yaml.Node) err
 
 ## Migration reference
 
-For the full list of what is and isn't automated, see [flows-changes.md](migration-documentation/flows-changes.md).
+For the full list of what is and isn't automated, see [flows-changes.md](migration-documentation/flows-changes.md). The official, customer-facing reference is the [Kestra 2.0.0 migration guide](https://kestra.io/docs/migration-guide/v2.0.0), which also covers the changes this tool cannot apply (database migrations, RBAC, storage, infrastructure).
