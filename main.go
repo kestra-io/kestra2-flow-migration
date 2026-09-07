@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/kestra-io/kestra2-flow-migration/internal/input"
@@ -81,6 +82,7 @@ as comments.`,
 				}
 				for _, warn := range warnings {
 					fmt.Fprintf(os.Stderr, "\033[33m⚠  %s: %s\033[0m\n", f.Name, warn)
+					printDocLink(os.Stderr, "   ", warn)
 				}
 				if disableV2Incompatible && migrate.HasV2Incompatible(warnings) {
 					fmt.Fprintf(os.Stderr, "\033[33m→  %s: disabled and labelled %s\033[0m\n", f.Name, "v2-migration: needs-manual-rewrite")
@@ -135,9 +137,10 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 		for _, warn := range warnings {
 			if warn.V2Incompatible {
 				fmt.Printf("\033[31m  ✗ %s\033[0m\n", warn)
-				continue
+			} else {
+				fmt.Printf("\033[33m  ⚠ %s\033[0m\n", warn)
 			}
-			fmt.Printf("\033[33m  ⚠ %s\033[0m\n", warn)
+			printDocLink(os.Stdout, "    ", warn)
 		}
 		needsMigration++
 	}
@@ -148,4 +151,13 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 	}
 	fmt.Printf("\033[1;32m✔  All %d flows are v2-compatible\033[0m\n", len(flows))
 	return nil
+}
+
+// printDocLink prints the official migration-guide page for a warning on its
+// own line, so the reader knows where the manual rewrite is documented.
+func printDocLink(w io.Writer, indent string, warn migrate.Warning) {
+	if warn.DocURL == "" {
+		return
+	}
+	fmt.Fprintf(w, "\033[2m%s↳ docs: %s\033[0m\n", indent, warn.DocURL)
 }

@@ -3976,3 +3976,103 @@ tasks:
 		t.Errorf("expected no SDK auth warning when auth is set, got %v", warnings)
 	}
 }
+
+// ── Warning documentation links ──────────────────────────────────────────────
+
+func TestApply_WarningsCarryDocURL(t *testing.T) {
+	cases := []struct {
+		name, in, wantDoc string
+	}{
+		{
+			name: "removed flow-iteration type links the ForEach→Loop page",
+			in: `id: f
+namespace: qa
+tasks:
+  - id: each
+    type: io.kestra.plugin.core.flow.EachSequential
+    value: '["a"]'
+    tasks:
+      - id: log
+        type: io.kestra.plugin.core.log.Log
+        message: hi
+`,
+			wantDoc: docForEachLoop,
+		},
+		{
+			name: "removed core task links the guide landing page",
+			in: `id: f
+namespace: qa
+tasks:
+  - id: count
+    type: io.kestra.plugin.core.execution.Count
+`,
+			wantDoc: DocMigrationGuide,
+		},
+		{
+			name: "pluginDefaults links its dedicated page",
+			in: `id: f
+namespace: qa
+pluginDefaults:
+  - type: io.kestra.plugin.core.log.Log
+    values:
+      level: INFO
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+`,
+			wantDoc: docPluginDefaults,
+		},
+		{
+			name: "SDK auth links its dedicated page",
+			in: `id: f
+namespace: qa
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.SyncFlows
+    url: https://github.com/x/y
+`,
+			wantDoc: docSDKAuth,
+		},
+		{
+			name: "unrewritable trigger condition links the trigger redesign page",
+			in: `id: f
+namespace: qa
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: sched
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0 * * *"
+    when: "{{ vars.keep }}"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Weekend
+`,
+			wantDoc: docTriggerConditions,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, warnings := applyWithWarningDetails(t, tc.in)
+			if len(warnings) == 0 {
+				t.Fatal("expected at least one warning")
+			}
+			for _, w := range warnings {
+				if w.DocURL == "" {
+					t.Errorf("warning %q has no DocURL", w.Message)
+				}
+			}
+			found := false
+			for _, w := range warnings {
+				if w.DocURL == tc.wantDoc {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("no warning linked %s; got %+v", tc.wantDoc, warnings)
+			}
+		})
+	}
+}

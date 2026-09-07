@@ -230,3 +230,24 @@ func TestDisableV2IncompatibleIsIdempotent(t *testing.T) {
 		t.Errorf("re-running over a disabled flow must be a no-op, got:\n%s", twice)
 	}
 }
+
+func TestDisableFlow_DescriptionLinksDocs(t *testing.T) {
+	in := `id: each
+namespace: qa
+tasks:
+  - id: each
+    type: io.kestra.plugin.core.flow.EachSequential
+    value: '["a"]'
+    tasks:
+      - id: log
+        type: io.kestra.plugin.core.log.Log
+        message: "{{ taskrun.value }}"
+`
+	out, _ := applyWithWarningDetails(t, in, DisableV2Incompatible())
+	if !strings.Contains(out, "    docs: "+docForEachLoop+"\n") {
+		t.Errorf("disabled description must link the ForEach→Loop guide under the reason, got:\n%s", out)
+	}
+	if !strings.Contains(out, "description: |") {
+		t.Errorf("description should stay a literal block scalar, got:\n%s", out)
+	}
+}

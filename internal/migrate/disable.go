@@ -98,6 +98,9 @@ func disabledDescription(original string, warnings []Warning) string {
 	for _, w := range warnings {
 		if w.V2Incompatible {
 			b.WriteString("  - " + strings.Join(strings.Fields(w.Message), " ") + "\n")
+			if w.DocURL != "" {
+				b.WriteString("    docs: " + w.DocURL + "\n")
+			}
 		}
 	}
 	b.WriteString("\nThe original definition is preserved as comments at the end of this file.\n")
