@@ -2,7 +2,7 @@
 
 CLI tool to migrate Kestra flow definitions from v1.3 to v2.0 YAML format.
 
-Applies 16 automated migration rules (type renames, property renames/removals, auth restructuring, and more) and flags flows that use removed types requiring manual rewriting.
+Applies 19 automated migration rules (type renames, property renames/removals, trigger-condition rewrites, auth restructuring, and more) and flags flows that use removed types requiring manual rewriting.
 
 For a detailed customer-facing walkthrough, see [Migrate Your Flows to v2](migration-documentation/migrate-your-flows-to-v2.md).
 
@@ -154,7 +154,7 @@ go test ./e2e/ -tags e2e -v
 main.go                     CLI entrypoint (cobra)
 internal/
   input/input.go            Resolves file paths and directories into []Flow
-  migrate/migrate.go        16 migration rules + removed type detection
+  migrate/migrate.go        19 migration rules + removed-type detection
   migrate/migrate_test.go   ~190 unit tests
   output/output.go          Writes flows to a directory or stdout
 e2e/
