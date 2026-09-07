@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/ma
 Pin a version or override the install directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/main/install-scripts/install.sh | VERSION=1.0.0 INSTALL_DIR=~/.local/bin bash
+curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/main/install-scripts/install.sh | VERSION=2.0.0 INSTALL_DIR=~/.local/bin bash
 ```
 
 ### Direct binary download
@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/ma
 Grab the binary for your platform from the [releases page](https://github.com/kestra-io/kestra2-flow-migration/releases):
 
 ```bash
-curl -fsSL -o kestra-migrate https://github.com/kestra-io/kestra2-flow-migration/releases/download/1.0.0/kestra-migrate_1.0.0_linux_arm64
+curl -fsSL -o kestra-migrate https://github.com/kestra-io/kestra2-flow-migration/releases/download/2.0.0/kestra-migrate_2.0.0_linux_arm64
 chmod +x kestra-migrate
 ```
 
