@@ -79,9 +79,11 @@ esac
 require awk
 release_json="$(mktemp)"
 if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
-  # /releases/latest excludes prereleases; this repo publishes alpha releases,
-  # so resolve the newest release (prereleases included) from the list instead.
-  download "https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=1" "$release_json"
+  # /releases/latest excludes prereleases, which is what we want: the only
+  # prereleases in this repo are the historical 1.0.0-alpha.* tags, and an
+  # unpinned install must never resolve to one. Pin with VERSION= to get a
+  # specific tag, prerelease or not.
+  download "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" "$release_json"
 else
   download "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${VERSION}" "$release_json"
 fi

@@ -1,5 +1,5 @@
 {
-  "branches": ["stable", {"name": "main", "prerelease": "alpha"}],
+  "branches": ["main"],
   "tagFormat": "${version}",
   "plugins": [
     ["@semantic-release/commit-analyzer", {"preset": "conventionalcommits"}],
