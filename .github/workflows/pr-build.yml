@@ -1,0 +1,99 @@
+name: PR Build
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build PR binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Cross-compile the same matrix .goreleaser.yml ships, so a QA person
+      # gets a binary for whatever machine they happen to be on. Version is
+      # stamped with the PR number + short SHA so `--version` output is
+      # traceable back to the exact run.
+      - name: Build
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          version="pr-${PR_NUMBER}-$(echo "$HEAD_SHA" | cut -c1-7)"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p dist
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            out="dist/kestra-migrate_pr-${PR_NUMBER}_${goos}_${goarch}"
+            [ "$goos" = "windows" ] && out="${out}.exe"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
+              -ldflags "-s -w -X main.version=${version} -X main.commit=${HEAD_SHA} -X main.buildDate=${build_date}" \
+              -o "$out" .
+          done
+          cd dist && sha256sum * > checksums.txt && cat checksums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kestra-migrate-pr-${{ github.event.pull_request.number }}
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error
+
+      # Fork PRs get a read-only token, so the comment step would fail. The
+      # install command still works there — it just is not advertised inline.
+      - name: Comment install command
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          marker='<!-- pr-build-install -->'
+          fence='```'
+          # Built line by line rather than with a heredoc: a heredoc body and
+          # its delimiter would have to sit flush-left, which ends the YAML
+          # block scalar this script lives in.
+          lines=(
+            "$marker"
+            "### Try this PR"
+            ""
+            "${fence}bash"
+            "curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install-scripts/install-pr.sh | PR=${PR_NUMBER} bash"
+            "$fence"
+            ""
+            "Installs this PR's build as \`kestra-migrate-pr${PR_NUMBER}\` (side by side with any released \`kestra-migrate\`), then:"
+            ""
+            "${fence}bash"
+            "kestra-migrate-pr${PR_NUMBER} --check path/to/flows/"
+            "$fence"
+            ""
+            "Requires the [\`gh\` CLI](https://cli.github.com/), authenticated (\`gh auth login\`) — GitHub Actions artifacts are not anonymously downloadable. Artifacts expire 14 days after the last build."
+          )
+          body="$(printf '%s\n' "${lines[@]}")"
+          existing="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" -f body="$body" >/dev/null
+            echo "Updated install comment ${existing}"
+          else
+            gh api -X POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$body" >/dev/null
+            echo "Posted install comment"
+          fi

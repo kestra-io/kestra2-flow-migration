@@ -34,6 +34,22 @@ Pin a version or override the install directory:
 curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/main/install-scripts/install.sh | VERSION=2.0.0 INSTALL_DIR=~/.local/bin bash
 ```
 
+### Try an open pull request
+
+Install the binary built by CI for a specific PR, to review a change without a checkout or a Go toolchain:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/main/install-scripts/install-pr.sh | PR=3 bash
+```
+
+It installs as `kestra-migrate-pr<number>`, so it sits alongside any released `kestra-migrate` rather than replacing it:
+
+```bash
+kestra-migrate-pr3 --check path/to/flows/
+```
+
+Requires the [`gh` CLI](https://cli.github.com/), authenticated (`gh auth login`) — GitHub Actions artifacts are not anonymously downloadable. Every PR gets this command posted as a comment automatically. Artifacts expire 14 days after the last build; push a commit to the PR to rebuild.
+
 ### Direct binary download
 
 Grab the binary for your platform from the [releases page](https://github.com/kestra-io/kestra2-flow-migration/releases):
