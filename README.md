@@ -103,8 +103,8 @@ Flows using constructs the tool cannot rewrite are still migrated as far as poss
 
 | Severity | Example | Effect on 2.0 |
 |----------|---------|---------------|
-| **v2-incompatible** (red `✗`) | a removed type such as `MultipleCondition` or `EachSequential`, flow-level `pluginDefaults`, a Schedule or Webhook trigger missing a required input | Kestra 2.0 **rejects the flow** — it cannot be deployed at all |
-| **advisory** (yellow `⚠`) | `read()` / `fileURI()` using the removed `version=` argument; tasks requiring SDK authentication (Git tasks calling the Kestra API, `io.kestra.plugin.kestra.*`, `ai.KestraFlow`) with no inline `auth:` | the flow deploys, but breaks at run time |
+| **v2-incompatible** (red `✗`) | a removed type such as `MultipleCondition` or `EachSequential`, flow-level `pluginDefaults`, a Schedule or Webhook trigger missing a required input, a task whose `auth:` is mandatory (`git.SyncFlow` / `TenantSync` / `NamespaceSync`, `ee.git.*`) | Kestra 2.0 **rejects the flow** — it cannot be deployed at all |
+| **advisory** (yellow `⚠`) | `read()` / `fileURI()` using the removed `version=` argument; tasks whose *optional* `auth:` is unset (`io.kestra.plugin.kestra.*`, `git.SyncFlows` / `Sync` / `PushFlows`, `ai.tool.KestraFlow`) | the flow deploys, but breaks at run time |
 
 In `--check` mode both are printed under the affected flow; in migration mode both go to stderr and the file is still written. Either way, these flows must be rewritten manually.
 
@@ -115,10 +115,34 @@ Every warning is followed by a `↳ docs:` line pointing at the official [Kestra
 | `ForEach`, `ForEachItem`, `EachSequential`, `EachParallel` | [ForEach replaced by Loop](https://kestra.io/docs/migration-guide/v2.0.0/foreach-loop) |
 | `MultipleCondition`, trigger `conditions` / `preconditions` / `timeWindow` that could not be rewritten | [Trigger conditions redesign](https://kestra.io/docs/migration-guide/v2.0.0/trigger-conditions-redesign) |
 | flow-level `pluginDefaults` / `taskDefaults` | [pluginDefaults removed](https://kestra.io/docs/migration-guide/v2.0.0/plugin-defaults-removed) |
-| tasks calling the Kestra API without an `auth:` block | [SDK authentication](https://kestra.io/docs/migration-guide/v2.0.0/sdk-authentication) |
+| tasks needing Kestra API credentials (mandatory or optional `auth:`) | [SDK authentication](https://kestra.io/docs/migration-guide/v2.0.0/sdk-authentication) |
 | removed core tasks (`Count`, `Resume`, `Toggle`, …), `workerGroup`, missing trigger inputs, Pebble `version=` | [Migration guide landing page](https://kestra.io/docs/migration-guide/v2.0.0) |
 
-Programmatic users get the same link on `migrate.Warning.DocURL`.
+The link prints on a family's first occurrence, and again per family in the end-of-run summary, rather than under all 96 warnings of a large run.
+
+Programmatic users get the same link on `migrate.Warning.DocURL`, plus `Warning.Code` (the warning family) and `Warning.Subject` (the type that triggered it).
+
+### Warning summary
+
+A run over more than one flow ends with warnings grouped by family, so a one-off finding is visible next to the bulk ones instead of buried under them:
+
+```
+Summary: 96 warnings across 77 flows — 88 blocking, 8 advisory
+
+  BLOCKING (Kestra 2.0 rejects the flow)
+     43× ✗  flow-level `pluginDefaults` removed                 → …/plugin-defaults-removed
+     42× ✗  ForEach removed, rewrite as Loop                    → …/foreach-loop
+          in 35 flows
+      2× ✗  trigger missing a required input                    → …/v2.0.0
+      1× ✗  mandatory `auth:` property, flow rejected on save   → …/sdk-authentication
+
+  ADVISORY (deploys, breaks at run time)
+      8× ⚠  task needs SDK authentication                       → …/sdk-authentication
+          3 git.PushFlows, 2 git.SyncFlows, 2 kestra.logs.Fetch, 1 ai.tool.KestraFlow
+          in 7 flows
+```
+
+The per-flow lines above it are unchanged, so existing output parsing keeps working.
 
 ### Keeping a bulk migration deployable (`--disable-v2-incompatible`)
 
