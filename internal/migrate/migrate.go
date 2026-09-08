@@ -69,6 +69,58 @@ type Warning struct {
 	// carries one: the dedicated sub-page when the guide has one for the
 	// construct, otherwise the guide's landing page.
 	DocURL string
+
+	// Code identifies the warning's family. It is the grouping key for the
+	// summary report: stable across runs and independent of the rendered
+	// message, which embeds per-occurrence detail (a task id, a line number)
+	// and therefore cannot be grouped by string matching.
+	Code Code
+
+	// Subject is the construct that triggered the warning — a task type FQN, a
+	// property name — used to break a family down by cause in the summary
+	// ("3 git.PushFlows, 2 kestra.logs.Fetch"). Optional.
+	Subject string
+}
+
+// Code is a warning family. Values are stable identifiers: they are grouping
+// keys, and a future --output json would expose them, so treat a rename as a
+// breaking change.
+type Code string
+
+const (
+	CodeRemovedType         Code = "removed-type"
+	CodeForEachLoop         Code = "foreach-loop"
+	CodePluginDefaults      Code = "plugin-defaults-removed"
+	CodeMissingTriggerInput Code = "missing-trigger-input"
+	CodeSdkAuthRequired     Code = "sdk-auth-required"
+	CodeSdkAuthAdvisory     Code = "sdk-auth-advisory"
+	CodePebbleVersionArg    Code = "pebble-version-arg"
+	CodeWorkerGroup         Code = "worker-group"
+	CodeTriggerConditions   Code = "trigger-conditions"
+)
+
+// codeLabels are the short human labels the grouped summary prints. They are
+// deliberately not truncations of Warning.Message: a message carries the full
+// remedy for one occurrence, a label names the family in a few words.
+var codeLabels = map[Code]string{
+	CodeRemovedType:         "type removed in v2, no automated replacement",
+	CodeForEachLoop:         "ForEach removed, rewrite as Loop",
+	CodePluginDefaults:      "flow-level `pluginDefaults` removed",
+	CodeMissingTriggerInput: "trigger missing a required input",
+	CodeSdkAuthRequired:     "mandatory `auth:` property, flow rejected on save",
+	CodeSdkAuthAdvisory:     "task needs SDK authentication",
+	CodePebbleVersionArg:    "Pebble `read()`/`fileURI()` uses the removed `version=`",
+	CodeWorkerGroup:         "`workerGroup` cannot be mapped to `workerSelector`",
+	CodeTriggerConditions:   "trigger conditions could not be rewritten",
+}
+
+// Label returns the short human label for a family, falling back to the raw
+// code so an unlabelled addition still renders something usable.
+func (c Code) Label() string {
+	if l, ok := codeLabels[c]; ok {
+		return l
+	}
+	return string(c)
 }
 
 func (w Warning) String() string { return w.Message }
@@ -85,19 +137,19 @@ const (
 )
 
 // v2Incompatible tags detector output as "2.0 refuses to save this flow".
-func v2Incompatible(messages []string, docURL string) []Warning {
-	return warningsOf(messages, true, docURL)
+func v2Incompatible(messages []string, docURL string, code Code) []Warning {
+	return warningsOf(messages, true, docURL, code)
 }
 
 // advisory tags detector output as "2.0 saves this flow, but it misbehaves".
-func advisory(messages []string, docURL string) []Warning {
-	return warningsOf(messages, false, docURL)
+func advisory(messages []string, docURL string, code Code) []Warning {
+	return warningsOf(messages, false, docURL, code)
 }
 
-func warningsOf(messages []string, incompatible bool, docURL string) []Warning {
+func warningsOf(messages []string, incompatible bool, docURL string, code Code) []Warning {
 	out := make([]Warning, 0, len(messages))
 	for _, m := range messages {
-		out = append(out, Warning{Message: m, V2Incompatible: incompatible, DocURL: docURL})
+		out = append(out, Warning{Message: m, V2Incompatible: incompatible, DocURL: docURL, Code: code})
 	}
 	return out
 }
@@ -149,7 +201,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 	// surface via detectRemovedTypes so the user knows manual work is pending.
 	var warnings []Warning
 	if !o.stayV1Compatible {
-		warnings = v2Incompatible(rewriteTriggerConditions(&doc), docTriggerConditions)
+		warnings = v2Incompatible(rewriteTriggerConditions(&doc), docTriggerConditions, CodeTriggerConditions)
 		// `when` on flow-level `checks` is a v2-only construct (v1.3 uses
 		// `condition`), so this rename is gated alongside the trigger rewrite.
 		renameChecksCondition(&doc)
@@ -158,21 +210,21 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// place (it still parses on v2).
 		migratePurgeKVExpiredOnly(&doc)
 		// `workerSelector` does not exist on v1.3 (EE worker routing).
-		warnings = append(warnings, v2Incompatible(migrateWorkerGroupToWorkerSelector(&doc), DocMigrationGuide)...)
+		warnings = append(warnings, v2Incompatible(migrateWorkerGroupToWorkerSelector(&doc), DocMigrationGuide, CodeWorkerGroup)...)
 		// v2-only validation: Schedule triggers must supply every input lacking
 		// a `defaults`. Warning-only (values can't be invented); a v1-compatible
 		// flow is unaffected, so this is gated to the v2 path.
-		warnings = append(warnings, v2Incompatible(detectMissingTriggerInputs(&doc), DocMigrationGuide)...)
+		warnings = append(warnings, v2Incompatible(detectMissingTriggerInputs(&doc), DocMigrationGuide, CodeMissingTriggerInput)...)
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
-		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc), DocMigrationGuide)...)
+		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc), DocMigrationGuide, CodePebbleVersionArg)...)
 		// Tasks needing Kestra API credentials on v2. Mixed severity: mandatory
 		// `auth` blocks the save, an optional one only 401s at run time, so the
 		// detector tags each warning itself.
 		warnings = append(warnings, detectSdkAuth(&doc)...)
 		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
 		// mechanical replacement — warning-only, like the flow-iteration types.
-		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc), docPluginDefaults)...)
+		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc), docPluginDefaults, CodePluginDefaults)...)
 	} else {
 		// v1.3 still accepts `pluginDefaults`, so under --stay-v1-compatible the
 		// pre-v2 normalization is kept: rename the deprecated `taskDefaults`
@@ -963,12 +1015,16 @@ func detectSdkAuth(doc *yaml.Node) []Warning {
 				Message:        fmt.Sprintf("line %d: `%s` has a mandatory `auth:` property in v2 — 2.0 rejects the flow on save (\"auth: must not be null\"), and server-level or namespace credentials cannot substitute; add an inline `auth:` block", m.Line, t),
 				V2Incompatible: true,
 				DocURL:         docSDKAuth,
+				Code:           CodeSdkAuthRequired,
+				Subject:        t,
 			})
 			return
 		}
 		warnings = append(warnings, Warning{
 			Message: fmt.Sprintf("line %d: `%s` calls the Kestra API and requires SDK authentication in v2 — add an `auth:` block, or configure credentials at namespace/tenant or server level", m.Line, t),
 			DocURL:  docSDKAuth,
+			Code:    CodeSdkAuthAdvisory,
+			Subject: t,
 		})
 	})
 	return warnings
@@ -1110,10 +1166,20 @@ func detectRemovedTypes(doc *yaml.Node) []Warning {
 			if id == "" {
 				id = "(unknown)"
 			}
+			// The flow-iteration types form their own family: they share one
+			// doc page and one rewrite, whereas Count / Resume /
+			// MultipleCondition each need a different fix and stay separate
+			// rows, broken out by Subject.
+			code := CodeRemovedType
+			if removedTypeDocs[typ] == docForEachLoop {
+				code = CodeForEachLoop
+			}
 			warnings = append(warnings, Warning{
 				Message:        fmt.Sprintf("%s uses %s (%s)", id, typ, reason),
 				V2Incompatible: true,
 				DocURL:         removedTypeDoc(typ),
+				Code:           code,
+				Subject:        typ,
 			})
 		}
 	})

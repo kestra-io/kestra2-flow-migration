@@ -9,6 +9,7 @@ import (
 	"github.com/kestra-io/kestra2-flow-migration/internal/input"
 	"github.com/kestra-io/kestra2-flow-migration/internal/migrate"
 	"github.com/kestra-io/kestra2-flow-migration/internal/output"
+	"github.com/kestra-io/kestra2-flow-migration/internal/report"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/spf13/cobra"
 )
@@ -72,6 +73,9 @@ as comments.`,
 			}
 
 			w := output.New(outDir, os.Stdout)
+			links := newDocLinks()
+			var entries []report.Entry
+			disabled := 0
 			for _, f := range flows {
 				migrated, warnings, err := migrate.Apply(f.Content, opts...)
 				if err != nil {
@@ -80,13 +84,19 @@ as comments.`,
 				if err := w.Write(f.Name, migrated); err != nil {
 					return err
 				}
+				entries = append(entries, report.Entry{Flow: f.Name, Warnings: warnings})
 				for _, warn := range warnings {
 					fmt.Fprintf(os.Stderr, "\033[33m⚠  %s: %s\033[0m\n", f.Name, warn)
-					printDocLink(os.Stderr, "   ", warn)
+					links.print(os.Stderr, "   ", warn)
 				}
 				if disableV2Incompatible && migrate.HasV2Incompatible(warnings) {
+					disabled++
 					fmt.Fprintf(os.Stderr, "\033[33m→  %s: disabled and labelled %s\033[0m\n", f.Name, "v2-migration: needs-manual-rewrite")
 				}
+			}
+			fmt.Fprint(os.Stderr, report.Summarize(entries))
+			if disabled > 0 {
+				fmt.Fprintf(os.Stderr, "\n\033[2m  %d flows disabled and labelled v2-migration: needs-manual-rewrite\033[0m\n", disabled)
 			}
 			return nil
 		},
@@ -105,6 +115,8 @@ as comments.`,
 
 func runCheck(flows []input.Flow, opts []migrate.Option) error {
 	needsMigration := 0
+	links := newDocLinks()
+	var entries []report.Entry
 	for _, f := range flows {
 		migrated, warnings, err := migrate.Apply(f.Content, opts...)
 		if err != nil {
@@ -112,6 +124,7 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 			needsMigration++
 			continue
 		}
+		entries = append(entries, report.Entry{Flow: f.Name, Warnings: warnings})
 		hasWarnings := len(warnings) > 0
 		if bytes.Equal(f.Content, migrated) && !hasWarnings {
 			fmt.Printf("\033[32m✔ %s\033[0m\n", f.Name)
@@ -140,10 +153,11 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 			} else {
 				fmt.Printf("\033[33m  ⚠ %s\033[0m\n", warn)
 			}
-			printDocLink(os.Stdout, "    ", warn)
+			links.print(os.Stdout, "    ", warn)
 		}
 		needsMigration++
 	}
+	fmt.Print(report.Summarize(entries))
 	fmt.Println()
 	if needsMigration > 0 {
 		fmt.Printf("\033[1;33m⚠  %d/%d flows need migration\033[0m\n", needsMigration, len(flows))
@@ -153,11 +167,30 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 	return nil
 }
 
-// printDocLink prints the official migration-guide page for a warning on its
-// own line, so the reader knows where the manual rewrite is documented.
-func printDocLink(w io.Writer, indent string, warn migrate.Warning) {
+// docLinks prints the official migration-guide page for a warning family once
+// per run, on the family's first occurrence. Repeating it under all 96 warnings
+// of a 400-flow corpus adds 96 lines carrying 5 distinct links; printing it on
+// the first occurrence keeps the link next to a real warning, and the grouped
+// summary repeats it per family at the end.
+type docLinks struct {
+	seen map[migrate.Code]bool
+}
+
+func newDocLinks() *docLinks {
+	return &docLinks{seen: map[migrate.Code]bool{}}
+}
+
+func (d *docLinks) print(w io.Writer, indent string, warn migrate.Warning) {
 	if warn.DocURL == "" {
 		return
+	}
+	// A warning with no family key cannot be deduped safely — print it every
+	// time rather than collapsing unrelated warnings onto one link.
+	if warn.Code != "" {
+		if d.seen[warn.Code] {
+			return
+		}
+		d.seen[warn.Code] = true
 	}
 	fmt.Fprintf(w, "\033[2m%s↳ docs: %s\033[0m\n", indent, warn.DocURL)
 }

@@ -180,6 +180,16 @@ The detector mirrors `FlowValidator.findMissingInputsForTriggers` on the `v2.0.0
 
 ⚠️ The `required: false` exemption shipped in **rc12** (kestra `f7f092584`, 2026-08-25); rc11 and earlier reject that shape, so warnings differ between an rc11-era instance and GA.
 
+### Grouped warning summary (`internal/report`)
+
+After the per-flow lines, a run over more than one flow prints a summary grouping warnings by family. It exists because the per-flow output is dominated by repetition — on the 401-flow corpus, 96 warning lines carry **5** distinct problems — and a one-off finding (the kind that took a live probe to notice) is invisible in that volume.
+
+- **Grouping keys off `Warning.Code`, never the message.** The `removed-type` messages embed the task id (`for_each uses …`, `each uses …`), so one family fragments into ~20 distinct strings. `Warning.Subject` (a type FQN) drives the per-cause breakdown line under a family.
+- **`Code` values are stable identifiers.** They are grouping keys and would be the natural JSON field, so renaming one is a breaking change. `codeLabels` holds the short summary label — deliberately not a truncation of `Message`, which carries the full per-occurrence remedy.
+- **`↳ docs:` prints once per family per run** (first occurrence), plus once per family in the summary: 96 doc lines → 5. A warning with an empty `Code` is never deduped, so an unclassified addition still links every time.
+- **The summary must not reuse the per-flow line shapes.** No line may start with a status marker (`^(✔|⚠|✎|✗) `) or with two spaces then a marker (`^  (✗|⚠) `) — those are what `.claude/commands/qa.md` stage 6 and users grep. That is why family rows lead with the count (`    43× ✗  …`) and the header reads `Summary:` rather than `⚠`. `TestSummarize_DoesNotCollideWithPerFlowLineShapes` guards it; getting it wrong silently double-counts every warning.
+- Presentation lives in `internal/report` so `internal/migrate` stays free of output concerns and the layout is unit-testable. Suppressed for a single flow, where it would only restate the lines above it.
+
 ### `--disable-v2-incompatible`
 
 Opt-in output mode (`migrate.DisableV2Incompatible()`, `internal/migrate/disable.go`). Flows with at least one `V2Incompatible` warning are rewritten into a deployable placeholder: `disabled: true`, the label `v2-migration: needs-manual-rewrite`, the reasons prepended to `description` under a `[kestra-migrate] NEEDS MANUAL REWRITE` marker, a stub `Fail` task, and the migrated definition appended as a comment block.
