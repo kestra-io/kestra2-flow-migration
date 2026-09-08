@@ -4021,12 +4021,15 @@ tasks:
 	}
 }
 
+// A type whose `auth` is optional on the model saves fine and only 401s at run
+// time, so it stays advisory. Verified on 2.0.0: `git.SyncFlows` validates with
+// no auth (only `targetNamespace` is mandatory).
 func TestDetectSdkAuthIsAdvisory(t *testing.T) {
 	in := `id: sync
 namespace: dev
 tasks:
   - id: sync
-    type: io.kestra.plugin.ai.KestraFlow
+    type: io.kestra.plugin.git.SyncFlows
 `
 	_, warnings := applyWithWarningDetails(t, in)
 	found := false
@@ -4034,12 +4037,111 @@ tasks:
 		if strings.Contains(w.Message, "requires SDK authentication") {
 			found = true
 			if w.V2Incompatible {
-				t.Errorf("SDK auth warning should be advisory, got V2Incompatible=true")
+				t.Errorf("optional-auth SDK warning should be advisory, got V2Incompatible=true")
 			}
 		}
 	}
 	if !found {
 		t.Errorf("expected SDK auth warning, got %v", warnings)
+	}
+}
+
+// `auth` is `@NotNull` on these, so 2.0 refuses to save the flow — the warning
+// has to be v2-incompatible or `--disable-v2-incompatible` leaves a flow that
+// breaks the bulk deploy. Each row verified against a live 2.0.0 EE instance.
+func TestDetectSdkAuthMandatoryAuthIsV2Incompatible(t *testing.T) {
+	for _, typ := range []string{
+		"io.kestra.plugin.git.SyncFlow",
+		"io.kestra.plugin.git.TenantSync",
+		"io.kestra.plugin.git.NamespaceSync",
+		"io.kestra.plugin.ee.git.SyncApps",
+		"io.kestra.plugin.ee.git.SyncBlueprints",
+		"io.kestra.plugin.ee.git.SyncUnitTests",
+		"io.kestra.plugin.ee.git.SyncDashboards",
+		"io.kestra.plugin.ee.git.PushApps",
+		"io.kestra.plugin.ee.git.PushBlueprints",
+		"io.kestra.plugin.ee.git.PushUnitTests",
+		"io.kestra.plugin.ee.git.PushDashboards",
+		"io.kestra.plugin.ee.git.Clone",
+	} {
+		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
+		_, warnings := applyWithWarningDetails(t, in)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w.Message, "mandatory `auth:` property") {
+				found = true
+				if !w.V2Incompatible {
+					t.Errorf("%s: mandatory-auth warning must be v2-incompatible", typ)
+				}
+				if w.DocURL != docSDKAuth {
+					t.Errorf("%s: expected the sdk-authentication doc link, got %q", typ, w.DocURL)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: expected a mandatory-auth warning, got %v", typ, warnings)
+		}
+	}
+}
+
+// An inline `auth:` satisfies the mandatory property — no warning at all.
+func TestDetectSdkAuthMandatorySuppressedByAuth(t *testing.T) {
+	in := `id: sync
+namespace: dev
+tasks:
+  - id: sync
+    type: io.kestra.plugin.git.NamespaceSync
+    auth:
+      apiToken: "{{ secret('KESTRA_API_TOKEN') }}"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if hasWarningContaining(warnings, "auth") {
+		t.Errorf("expected no auth warning when auth is set, got %v", warnings)
+	}
+}
+
+// These type strings do not exist in 2.0.0 — dashboard sync is EE-only and the
+// AI tool lives at io.kestra.plugin.ai.tool.KestraFlow — so matching them would
+// warn about a type the user cannot be running.
+func TestDetectSdkAuthDeadTypeStringsNotMatched(t *testing.T) {
+	for _, typ := range []string{
+		"io.kestra.plugin.git.SyncDashboards",
+		"io.kestra.plugin.git.PushDashboards",
+		"io.kestra.plugin.ai.KestraFlow",
+	} {
+		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
+		_, warnings := applyWithWarnings(t, in)
+		if hasWarningContaining(warnings, "auth") {
+			t.Errorf("%s does not exist in 2.0.0 and must not be flagged, got %v", typ, warnings)
+		}
+	}
+}
+
+// The real AI tool type is nested under an agent's `tools:` list, not `tasks:`,
+// and its `auth` is optional — advisory, and reachable by the mapping walk.
+func TestDetectSdkAuthAiToolKestraFlow(t *testing.T) {
+	in := `id: agent
+namespace: dev
+tasks:
+  - id: agent
+    type: io.kestra.plugin.ai.agent.Agent
+    tools:
+      - type: io.kestra.plugin.ai.tool.KestraFlow
+        namespace: dev
+        flowId: other
+`
+	_, warnings := applyWithWarningDetails(t, in)
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w.Message, "io.kestra.plugin.ai.tool.KestraFlow") {
+			found = true
+			if w.V2Incompatible {
+				t.Errorf("ai.tool.KestraFlow auth is optional — should be advisory")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected an advisory warning for the nested AI tool, got %v", warnings)
 	}
 }
 
@@ -4089,18 +4191,26 @@ tasks:
 	}
 }
 
+// The OSS types whose `auth` is optional (AbstractCloningTask branch of
+// plugin-git 4.0.0) stay advisory.
 func TestDetectSdkAuthOtherGitApiTasks(t *testing.T) {
 	for _, typ := range []string{
-		"io.kestra.plugin.git.SyncFlow",
+		"io.kestra.plugin.git.SyncFlows",
 		"io.kestra.plugin.git.Sync",
-		"io.kestra.plugin.git.SyncDashboards",
 		"io.kestra.plugin.git.PushFlows",
-		"io.kestra.plugin.git.PushDashboards",
-		"io.kestra.plugin.git.TenantSync",
 	} {
 		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
-		_, warnings := applyWithWarnings(t, in)
-		if !hasWarningContaining(warnings, "requires SDK authentication") {
+		_, warnings := applyWithWarningDetails(t, in)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w.Message, "requires SDK authentication") {
+				found = true
+				if w.V2Incompatible {
+					t.Errorf("%s: optional auth must stay advisory", typ)
+				}
+			}
+		}
+		if !found {
 			t.Errorf("%s: expected SDK auth warning, got %v", typ, warnings)
 		}
 	}
@@ -4123,35 +4233,34 @@ tasks:
 	}
 }
 
-func TestDetectSdkAuthEEGitTasks(t *testing.T) {
-	for _, typ := range []string{
-		"io.kestra.plugin.ee.git.SyncApps",
-		"io.kestra.plugin.ee.git.SyncBlueprints",
-		"io.kestra.plugin.ee.git.SyncUnitTests",
-		"io.kestra.plugin.ee.git.PushApps",
-		"io.kestra.plugin.ee.git.PushBlueprints",
-		"io.kestra.plugin.ee.git.PushUnitTests",
-	} {
-		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
-		_, warnings := applyWithWarnings(t, in)
-		if !hasWarningContaining(warnings, "requires SDK authentication") {
-			t.Errorf("%s: expected SDK auth warning, got %v", typ, warnings)
-		}
-	}
-}
-
-// ee.git.Clone only clones into the working directory; no Kestra API call.
-func TestDetectSdkAuthEEGitCloneNotFlagged(t *testing.T) {
-	in := `id: clone
+// ee.git.Clone makes no Kestra API call, but plugin-ee-git 2.2.0 has it extend
+// AbstractCloningTask → AbstractKestraTask, where `auth` is `@NotNull`. So the
+// flow fails to *save* without it: the constraint is on the model, not the
+// behaviour. The OSS io.kestra.plugin.git.Clone has an optional auth and is not
+// flagged at all.
+func TestDetectSdkAuthEEGitCloneFlaggedOssCloneNot(t *testing.T) {
+	ee := `id: clone
 namespace: dev
 tasks:
   - id: clone
     type: io.kestra.plugin.ee.git.Clone
     url: https://github.com/kestra-io/flows
 `
-	_, warnings := applyWithWarnings(t, in)
-	if hasWarningContaining(warnings, "requires SDK authentication") {
-		t.Errorf("expected no SDK auth warning for ee.git.Clone, got %v", warnings)
+	_, warnings := applyWithWarningDetails(t, ee)
+	if !hasWarningContaining(warningMessages(warnings), "mandatory `auth:` property") {
+		t.Errorf("ee.git.Clone must be flagged (auth is @NotNull), got %v", warnings)
+	}
+
+	oss := `id: clone
+namespace: dev
+tasks:
+  - id: clone
+    type: io.kestra.plugin.git.Clone
+    url: https://github.com/kestra-io/flows
+`
+	_, warnings = applyWithWarningDetails(t, oss)
+	if hasWarningContaining(warningMessages(warnings), "auth") {
+		t.Errorf("OSS git.Clone has optional auth and makes no API call, got %v", warnings)
 	}
 }
 
