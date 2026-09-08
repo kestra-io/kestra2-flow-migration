@@ -43,7 +43,26 @@ Last reconciled against the customer-facing v2.0.0 migration guide on **2026-08-
 - **JDBC `Query` task single statement only:** Split into multiple `Query` tasks or use `Queries`.
 - **Inputs with defaults must be required:** In v2, inputs that have a `defaults` value must be required (the default). If an input has both `defaults` and `required: false`, remove `required: false` so the input becomes required.
 - **Input `prefill` guidance:** If optional inputs used `defaults` but must be clearable, switch to `prefill` and remove `defaults`. **Caveat:** do not do this for an input consumed by an automatic trigger (see next entry) — a `prefill`-only input has no `defaults` and will break scheduled executions.
-- **Triggers must supply every input lacking a `defaults`:** In v2, a trigger that launches executions non-interactively — verified on `io.kestra.plugin.core.trigger.Schedule`, and by the same rule any automatic trigger — must be able to resolve every flow `input`. Any input without a `defaults` value must be provided by the trigger's `inputs:` map, **keyed by input `id`** (`inputs: {<inputId>: <value>}`). A `prefill` value and/or `required: false` do **not** satisfy this — `prefill` is only a UI hint for manual runs — so a v1 flow that scheduled fine with an unprovided optional/prefilled input is rejected by v2 with `Invalid Flow: Missing inputs for Schedule Trigger '<triggerId>', missing inputs: '<inputId>'`. (Note the v1 verbose trigger-input form `inputs: {name: <id>, value: <v>}` is read literally in v2 as inputs named `name`/`value`, so it also fails to supply `<id>` — rewrite to `inputs: {<id>: <v>}`.) **Not automated:** the migrator cannot invent input values, so affected flows are flagged with a validation warning; fix by adding a `defaults` to the input or supplying the value in the trigger's `inputs:`. Inputs gated by a `dependsOn` are only required when their condition holds, so they are **not** flagged (avoids false positives on conditional inputs).
+- **Schedule and Webhook triggers must supply every *required* input lacking a `defaults`:** In v2, a trigger that launches executions non-interactively must be able to resolve every flow `input` that is required and has no `defaults`. Such an input must be provided by the trigger's `inputs:` map, **keyed by input `id`** (`inputs: {<inputId>: <value>}`), otherwise v2 rejects the flow with `Invalid Flow: Missing inputs for <Kind> Trigger '<triggerId>', missing inputs: '<inputId>'`.
+
+  The exact rule, read off `FlowValidator.findMissingInputsForTriggers` on the `v2.0.0` tag: an input needs a trigger value when `getDefaults() == null && !Boolean.FALSE.equals(getRequired())`, checked against `Schedule` and `AbstractWebhookTrigger` triggers only (`inputsSuppliedBy`). Consequences, each verified against a live 2.0.0 instance:
+
+  | Input shape | Trigger | 2.0.0 verdict |
+  |---|---|---|
+  | no `required` key, no `defaults` | Schedule / Webhook | **rejected** (`required` defaults to `true`) |
+  | `required: true`, no `defaults` | Schedule / Webhook | **rejected** |
+  | `prefill: x`, no `defaults` | Schedule / Webhook | **rejected** (`prefill` is only a UI hint) |
+  | `required: false` | Schedule / Webhook | accepted — the input resolves to `null` at runtime |
+  | `defaults` present | Schedule / Webhook | accepted |
+  | supplied under the trigger's `inputs:` | Schedule / Webhook | accepted |
+  | required, no `defaults`, gated by `dependsOn` | Schedule / Webhook | **rejected** — the validator applies no `dependsOn` exemption |
+  | required, no `defaults` | `Flow` trigger, polling triggers (e.g. `core.http.Trigger`) | accepted — not covered by the validator |
+
+  `FORM` inputs are expanded to dotted leaf paths (`resolvableInputs()` → `Input.expandToLeaves`), so a missing `FORM` child is reported as `'<formId>.<childId>'` and must be supplied under that dotted key.
+
+  ⚠️ **This rule changed during the 2.0.0 release candidates.** The `required: false` exemption was added in kestra `f7f092584` (2026-08-25) and first shipped in **rc12**; rc11 and earlier rejected `required: false` inputs too. Flows validated against an rc11-or-older build will therefore report warnings that GA accepts.
+
+  **Not automated:** the migrator cannot invent input values, so affected flows are flagged with a validation warning. Remedies differ by shape, because v2 also rejects contradictory input declarations (`InputValidator`): an input with `defaults` **must** be required (`required: false` + `defaults` → *"Inputs with a default value must be required"*) and **cannot** also carry a `prefill` (*"Inputs with a default value cannot also have a prefill"*). So the safe fix is to supply the value under the trigger's `inputs:`; adding a `defaults` works only if the input has no `prefill` and is not marked `required: false`. (Note the v1 verbose trigger-input form `inputs: {name: <id>, value: <v>}` is read literally in v2 as inputs named `name`/`value`, so it also fails to supply `<id>` — rewrite to `inputs: {<id>: <v>}`.)
 - **Input type `ENUM` removed:** Replace `ENUM` with `SELECT` (single choice) or `MULTISELECT` (multiple choices) in input definitions.
 - **`Echo` task removed:** Replace `io.kestra.plugin.core.debug.Echo` with `io.kestra.plugin.core.log.Log`.
 - **Flow YAML expand helper removed:** The `[[>/path/to/file.txt]]` include syntax is no longer supported. Inline the content or use `Subflow` references instead.

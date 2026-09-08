@@ -1107,18 +1107,55 @@ func detectPluginDefaults(doc *yaml.Node) []string {
 // rename rules run, every Schedule trigger uses this path.
 const scheduleTriggerType = "io.kestra.plugin.core.trigger.Schedule"
 
-// detectMissingTriggerInputs flags Schedule triggers that fail to supply a value
-// for every flow input lacking a `defaults`. In v2 a trigger that launches
-// executions non-interactively must be able to resolve every input; a `prefill`
-// value and/or `required: false` do NOT satisfy this — `prefill` is only a UI
-// hint for manual runs. The migrator cannot invent input values, so this is
-// warning-only: fix by adding a `defaults` to the input or supplying it under
-// the trigger's `inputs:` map (keyed by input id).
+// webhookTriggerType is the v2 Webhook trigger type. It is the only
+// `AbstractWebhookTrigger` subclass shipped in 2.0.0 (checked on the `v2.0.0`
+// tag: `core/.../plugin/core/trigger/Webhook.java` is the sole non-test
+// subclass, and plugin-ee-git ships none), so matching the concrete type is
+// equivalent to the validator's `case AbstractWebhookTrigger`.
+const webhookTriggerType = "io.kestra.plugin.core.trigger.Webhook"
+
+// triggerInputKinds maps the trigger types that can supply flow inputs to the
+// kind label v2 uses in its own error message. Mirrors
+// `FlowValidator.inputsSuppliedBy`, which switches on `Schedule` and
+// `AbstractWebhookTrigger` and returns empty for every other trigger — so
+// `Flow` triggers and polling triggers are deliberately absent (verified on a
+// live 2.0.0 instance: both accept a flow with an unsupplied required input).
+var triggerInputKinds = map[string]string{
+	scheduleTriggerType: "Schedule",
+	webhookTriggerType:  "Webhook",
+}
+
+// formInputType is the EE `FORM` input type, whose children v2 expands into
+// dotted leaf paths (`<formId>.<childId>`) before checking them.
+const formInputType = "FORM"
+
+// neededInput is an input that a Schedule/Webhook trigger must supply, carrying
+// the shape details needed to word an accurate remedy.
+type neededInput struct {
+	// id is the key a trigger must supply — the input id, or the dotted
+	// `<formId>.<childId>` path for a FORM child.
+	id string
+	// prefill reports whether the input declares a `prefill`. Such an input
+	// cannot also take a `defaults` (v2's InputValidator rejects the pair), so
+	// the "add a defaults" remedy does not apply to it.
+	prefill bool
+}
+
+// detectMissingTriggerInputs flags Schedule and Webhook triggers that fail to
+// supply a value for every *required* flow input lacking a `defaults`. In v2 a
+// trigger that launches executions non-interactively must be able to resolve
+// those inputs, and rejects the flow on save otherwise. The migrator cannot
+// invent input values, so this is warning-only; `neededTriggerInputs` documents
+// the exact rule and `neededInput.remedy` the fixes that are valid per shape.
+//
+// A `prefill` does NOT exempt an input — it is only a UI hint for manual runs —
+// but `required: false` does, since 2.0.0 (rc12+).
 //
 // The v1 verbose trigger-input form `inputs: {name: <id>, value: <v>}` provides
 // keys literally named `name`/`value`, so it never matches a real input id and
 // is correctly flagged here too.
-// (flows-changes.md: "Triggers must supply every input lacking a `defaults`")
+// (flows-changes.md: "Schedule and Webhook triggers must supply every *required*
+// input lacking a `defaults`")
 func detectMissingTriggerInputs(doc *yaml.Node) []string {
 	root := docRoot(doc)
 	if root == nil || root.Kind != yaml.MappingNode {
@@ -1128,22 +1165,7 @@ func detectMissingTriggerInputs(doc *yaml.Node) []string {
 	if inputs == nil || inputs.Kind != yaml.SequenceNode {
 		return nil
 	}
-	// Collect input ids that have no `defaults` — an automatic trigger must
-	// supply these for a scheduled execution to resolve. Inputs gated by a
-	// `dependsOn` are only required when their condition holds, so we can't
-	// statically say a scheduled run needs them — skip them to avoid false
-	// positives.
-	var needed []string
-	for _, in := range inputs.Content {
-		if in.Kind != yaml.MappingNode {
-			continue
-		}
-		id := stringValue(in, "id")
-		if id == "" || mappingValue(in, "defaults") != nil || mappingValue(in, "dependsOn") != nil {
-			continue
-		}
-		needed = append(needed, id)
-	}
+	needed := neededTriggerInputs(inputs)
 	if len(needed) == 0 {
 		return nil
 	}
@@ -1153,7 +1175,11 @@ func detectMissingTriggerInputs(doc *yaml.Node) []string {
 	}
 	var warnings []string
 	for _, tr := range triggers.Content {
-		if tr.Kind != yaml.MappingNode || stringValue(tr, "type") != scheduleTriggerType {
+		if tr.Kind != yaml.MappingNode {
+			continue
+		}
+		kind, ok := triggerInputKinds[stringValue(tr, "type")]
+		if !ok {
 			continue
 		}
 		supplied := suppliedTriggerInputs(tr)
@@ -1161,17 +1187,104 @@ func detectMissingTriggerInputs(doc *yaml.Node) []string {
 		if trID == "" {
 			trID = "(unknown)"
 		}
-		for _, id := range needed {
-			if !supplied[id] {
+		for _, in := range needed {
+			if !supplied[in.id] {
 				warnings = append(warnings, fmt.Sprintf(
-					"Schedule trigger '%s' does not supply input '%s' (which has no defaults); "+
-						"v2 rejects this with \"Missing inputs for Schedule Trigger\" — add a `defaults` "+
-						"to the input or set it under the trigger's `inputs:`",
-					trID, id))
+					"%s trigger '%s' does not supply required input '%s'; v2 rejects the flow "+
+						"with \"Missing inputs for %s Trigger\" — %s",
+					kind, trID, in.id, kind, in.remedy()))
 			}
 		}
 	}
 	return warnings
+}
+
+// remedy describes the fixes that are actually valid for this input's shape.
+// v2's InputValidator rejects contradictory declarations, so the obvious advice
+// is not always safe: `defaults` + `required: false` fails with "Inputs with a
+// default value must be required", and `defaults` + `prefill` fails with
+// "Inputs with a default value cannot also have a prefill". Supplying the value
+// under the trigger is the one remedy that always works.
+func (n neededInput) remedy() string {
+	const supply = "supply it under the trigger's `inputs:`"
+	const optional = "or mark the input `required: false` (it then resolves to null at runtime)"
+	if n.prefill {
+		return supply + ", replace the input's `prefill` with `defaults` " +
+			"(v2 rejects an input declaring both), " + optional
+	}
+	return supply + ", add a `defaults` to the input, " + optional
+}
+
+// neededTriggerInputs returns the inputs a Schedule/Webhook trigger must supply,
+// mirroring `FlowValidator.findMissingInputsForTriggers` on the `v2.0.0` tag:
+//
+//	resolvableInputs().stream()
+//	    .filter(input -> input.getDefaults() == null && !Boolean.FALSE.equals(input.getRequired()))
+//
+// Two consequences worth spelling out, both verified against a live 2.0.0
+// instance:
+//
+//   - `required: false` exempts an input, `prefill` does not (`required`
+//     defaults to `true` on `Input`). The exemption was added in kestra
+//     `f7f092584` and first shipped in rc12, so an rc11-or-older instance still
+//     rejects `required: false` inputs.
+//   - there is no `dependsOn` exemption: a conditionally-required input still
+//     has to be supplied, so gated inputs are flagged like any other.
+//
+// `resolvableInputs()` also expands `FORM` inputs into dotted leaf paths, which
+// is why a FORM child is reported as `<formId>.<childId>` — the key a trigger
+// has to supply. REUSABLE_INPUTS references are left alone: the validator
+// resolves them with a null expander at save time, so they are not inlined
+// there either.
+func neededTriggerInputs(inputs *yaml.Node) []neededInput {
+	var needed []neededInput
+	for _, in := range inputs.Content {
+		if in.Kind != yaml.MappingNode {
+			continue
+		}
+		id := stringValue(in, "id")
+		if id == "" {
+			continue
+		}
+		if stringValue(in, "type") == formInputType {
+			// A FORM groups children and can declare neither `defaults` nor
+			// `prefill`; nesting is rejected by validation, so this is a
+			// single level.
+			children := mappingValue(in, "inputs")
+			if children == nil || children.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, child := range children.Content {
+				if child.Kind != yaml.MappingNode {
+					continue
+				}
+				childID := stringValue(child, "id")
+				if childID == "" {
+					continue
+				}
+				if n, ok := requiresTriggerValue(child, id+"."+childID); ok {
+					needed = append(needed, n)
+				}
+			}
+			continue
+		}
+		if n, ok := requiresTriggerValue(in, id); ok {
+			needed = append(needed, n)
+		}
+	}
+	return needed
+}
+
+// requiresTriggerValue reports whether a single input must be supplied by a
+// Schedule/Webhook trigger: no `defaults`, and not explicitly `required: false`.
+func requiresTriggerValue(in *yaml.Node, id string) (neededInput, bool) {
+	if mappingValue(in, "defaults") != nil {
+		return neededInput{}, false
+	}
+	if stringValue(in, "required") == "false" {
+		return neededInput{}, false
+	}
+	return neededInput{id: id, prefill: mappingValue(in, "prefill") != nil}, true
 }
 
 // suppliedTriggerInputs returns the set of input ids a trigger provides via its

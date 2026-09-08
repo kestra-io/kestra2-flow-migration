@@ -155,7 +155,18 @@ Detected types: `MultipleCondition`, `Count`, `Resume`, `Toggle`, `git.Push`, `n
 
 `detectPebbleVersionArg()` flags Pebble `read()`/`fileURI()` calls using the removed `version=` named argument (renamed to `revision` in v2 with **no fallback**, kestra PR #16699 / rc3). Warning-only — rewriting inside arbitrary expressions could corrupt embedded script code. Gated to the v2 path.
 
-Beyond removed types, `detectMissingTriggerInputs()` emits a **semantic** validation warning: a `Schedule` trigger that fails to supply every flow input lacking a `defaults` (`prefill` / `required: false` do not count) — v2 rejects these with "Missing inputs for Schedule Trigger". Inputs gated by a `dependsOn` are skipped (conditionally required). Not auto-fixable (values can't be invented); gated to the v2 path (skipped under `--stay-v1-compatible`). Called from `Apply()` alongside `detectRemovedTypes`.
+Beyond removed types, `detectMissingTriggerInputs()` emits a **semantic** validation warning: a `Schedule` or `Webhook` trigger that fails to supply a *required* flow input lacking a `defaults` — v2 rejects these with "Missing inputs for `<Kind>` Trigger". Not auto-fixable (values can't be invented); gated to the v2 path (skipped under `--stay-v1-compatible`). Called from `Apply()` alongside `detectRemovedTypes`.
+
+The detector mirrors `FlowValidator.findMissingInputsForTriggers` on the `v2.0.0` tag — `getDefaults() == null && !Boolean.FALSE.equals(getRequired())`, over `resolvableInputs()`, for `Schedule` and `AbstractWebhookTrigger` only. Keep it aligned with that method rather than reasoning from first principles; four consequences are easy to get wrong (all verified live, see #8):
+
+- **`required: false` exempts an input; `prefill` does not** (`Input.required` is `@Builder.Default true`). Flagging `required: false` was the single largest source of false positives reported from support — 106 of 167 flows on one estate.
+- **There is no `dependsOn` exemption.** A conditionally-required input still has to be supplied, so gated inputs are flagged like any other. (This detector used to skip them.)
+- **`FORM` inputs are expanded to dotted leaves** (`Input.expandToLeaves`), so a missing child is reported as `<formId>.<childId>`, and the FORM node itself is never flagged.
+- **`Flow` triggers and polling triggers are not covered** — `inputsSuppliedBy` returns empty for them, so v2 accepts an unsupplied required input there.
+
+`neededInput.remedy()` words the fix per input shape, because v2's `InputValidator` rejects contradictory declarations: `defaults` + `required: false` ("Inputs with a default value must be required") and `defaults` + `prefill` ("Inputs with a default value cannot also have a prefill"). So "add a `defaults`" is only offered when the input has no `prefill` — supplying the value under the trigger's `inputs:` is the one always-valid remedy. Don't collapse these back into a single message.
+
+⚠️ The `required: false` exemption shipped in **rc12** (kestra `f7f092584`, 2026-08-25); rc11 and earlier reject that shape, so warnings differ between an rc11-era instance and GA.
 
 ### `--disable-v2-incompatible`
 

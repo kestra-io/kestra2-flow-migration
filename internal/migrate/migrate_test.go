@@ -3591,9 +3591,43 @@ tasks:
 	}
 }
 
-// A Schedule trigger with no `inputs:` and a flow input that has no `defaults`
-// (prefill / required:false do not count) is rejected by v2 — warn.
-func TestApply_MissingTriggerInputs_NoTriggerInputs_Warns(t *testing.T) {
+// The rule the detector mirrors is `FlowValidator.findMissingInputsForTriggers`
+// on the `v2.0.0` tag: an input needs a trigger value when it has no `defaults`
+// and is not explicitly `required: false`, checked for Schedule and Webhook
+// triggers only. Every case below was verified against a live 2.0.0 instance.
+
+// A required input with no `defaults`, unsupplied by the Schedule trigger, is
+// rejected by v2 on save — warn.
+func TestApply_MissingTriggerInputs_RequiredInputNotSupplied_Warns(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+inputs:
+  - id: date
+    type: DATETIME
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.date }}"
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 14 25 12 *"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !warningsContain(warnings, "does not supply required input 'date'") {
+		t.Errorf("expected missing-trigger-input warning for 'date'; got: %v", warnings)
+	}
+	if !warningsContain(warnings, "Schedule trigger 'schedule'") {
+		t.Errorf("warning should name the trigger kind and id; got: %v", warnings)
+	}
+}
+
+// `required: false` exempts an input: 2.0.0 accepts the flow and the input
+// resolves to null at runtime. Flagging it produced the bulk of the false
+// positives reported in issue #8 — 106 of 167 flows on one customer estate.
+// The exemption landed in kestra `f7f092584` and first shipped in rc12, so an
+// rc11-or-older instance still rejects this shape.
+func TestApply_MissingTriggerInputs_RequiredFalse_NoWarn(t *testing.T) {
 	in := `id: advanced-scheduling
 namespace: company.team
 inputs:
@@ -3611,8 +3645,40 @@ triggers:
     cron: "0 14 25 12 *"
 `
 	_, warnings := applyWithWarnings(t, in)
-	if !warningsContain(warnings, "does not supply input 'date'") {
-		t.Errorf("expected missing-trigger-input warning for 'date'; got: %v", warnings)
+	if warningsContain(warnings, "does not supply required input") {
+		t.Errorf("`required: false` must not warn (v2 exempts it); got: %v", warnings)
+	}
+}
+
+// A `prefill` alone does NOT exempt an input (`required` defaults to true), so
+// it is still flagged — but the remedy must not tell the user to add a
+// `defaults`, which v2 rejects with "Inputs with a default value cannot also
+// have a prefill".
+func TestApply_MissingTriggerInputs_PrefillOnly_Warns(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+inputs:
+  - id: date
+    type: DATETIME
+    prefill: 2023-12-22T14:00:00.000Z
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.date }}"
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 14 25 12 *"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !warningsContain(warnings, "does not supply required input 'date'") {
+		t.Errorf("prefill alone must not exempt an input; got: %v", warnings)
+	}
+	if !warningsContain(warnings, "replace the input's `prefill` with `defaults`") {
+		t.Errorf("remedy must account for the prefill/defaults conflict; got: %v", warnings)
+	}
+	if warningsContain(warnings, "add a `defaults` to the input") {
+		t.Errorf("remedy must not suggest adding `defaults` alongside a `prefill`; got: %v", warnings)
 	}
 }
 
@@ -3624,8 +3690,6 @@ namespace: company.team
 inputs:
   - id: user
     type: STRING
-    prefill: Data Engineer
-    required: false
 tasks:
   - id: hello
     type: io.kestra.plugin.core.log.Log
@@ -3639,7 +3703,7 @@ triggers:
       value: custom value
 `
 	_, warnings := applyWithWarnings(t, in)
-	if !warningsContain(warnings, "does not supply input 'user'") {
+	if !warningsContain(warnings, "does not supply required input 'user'") {
 		t.Errorf("expected missing-trigger-input warning for 'user'; got: %v", warnings)
 	}
 }
@@ -3662,7 +3726,7 @@ triggers:
     cron: "0 14 * * *"
 `
 	_, warnings := applyWithWarnings(t, in)
-	if warningsContain(warnings, "does not supply input") {
+	if warningsContain(warnings, "does not supply required input") {
 		t.Errorf("input with defaults must not warn; got: %v", warnings)
 	}
 }
@@ -3674,7 +3738,6 @@ namespace: company.team
 inputs:
   - id: user
     type: STRING
-    required: false
 tasks:
   - id: hello
     type: io.kestra.plugin.core.log.Log
@@ -3687,14 +3750,16 @@ triggers:
       user: custom value
 `
 	_, warnings := applyWithWarnings(t, in)
-	if warningsContain(warnings, "does not supply input") {
+	if warningsContain(warnings, "does not supply required input") {
 		t.Errorf("trigger supplying the input must not warn; got: %v", warnings)
 	}
 }
 
-// Inputs gated by a `dependsOn` are only required when their condition holds,
-// so they must not be flagged (avoids false positives on conditional inputs).
-func TestApply_MissingTriggerInputs_DependsOnInput_NoWarn(t *testing.T) {
+// v2 applies no `dependsOn` exemption: `findMissingInputsForTriggers` filters
+// on `defaults`/`required` only, so a conditionally-required input still has to
+// be supplied. Verified live — a gated required input is rejected with
+// "Missing inputs for Schedule Trigger".
+func TestApply_MissingTriggerInputs_DependsOnInput_Warns(t *testing.T) {
 	in := `id: test-flow
 namespace: company.team
 inputs:
@@ -3718,8 +3783,139 @@ triggers:
     cron: "0 0 * * 0"
 `
 	_, warnings := applyWithWarnings(t, in)
-	if warningsContain(warnings, "does not supply input") {
-		t.Errorf("dependsOn (conditional) inputs must not warn; got: %v", warnings)
+	if !warningsContain(warnings, "does not supply required input 'tag_name'") {
+		t.Errorf("dependsOn does not exempt an input in v2; got: %v", warnings)
+	}
+}
+
+// The validator covers `AbstractWebhookTrigger` as well as `Schedule`, and
+// labels the violation "Webhook Trigger".
+func TestApply_MissingTriggerInputs_WebhookTrigger_Warns(t *testing.T) {
+	in := `id: ci-cd-github-webhook
+namespace: company.team
+inputs:
+  - id: payload
+    type: JSON
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.payload }}"
+triggers:
+  - id: github
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: abcdef
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !warningsContain(warnings, "Webhook trigger 'github' does not supply required input 'payload'") {
+		t.Errorf("expected a Webhook trigger-input warning; got: %v", warnings)
+	}
+	if !warningsContain(warnings, `Missing inputs for Webhook Trigger`) {
+		t.Errorf("warning should quote v2's own Webhook wording; got: %v", warnings)
+	}
+}
+
+// The same exemption applies on a Webhook trigger.
+func TestApply_MissingTriggerInputs_WebhookRequiredFalse_NoWarn(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+inputs:
+  - id: payload
+    type: JSON
+    required: false
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.payload }}"
+triggers:
+  - id: github
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: abcdef
+`
+	_, warnings := applyWithWarnings(t, in)
+	if warningsContain(warnings, "does not supply required input") {
+		t.Errorf("`required: false` must not warn on a Webhook trigger; got: %v", warnings)
+	}
+}
+
+// `inputsSuppliedBy` returns empty for every other trigger, so a Flow trigger
+// with an unsupplied required input is accepted by v2 — must not warn.
+func TestApply_MissingTriggerInputs_FlowTrigger_NoWarn(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+inputs:
+  - id: p
+    type: STRING
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.p }}"
+triggers:
+  - id: upstream
+    type: io.kestra.plugin.core.trigger.Flow
+    dependsOn:
+      - namespace: company.team
+        flowId: other
+`
+	_, warnings := applyWithWarnings(t, in)
+	if warningsContain(warnings, "does not supply required input") {
+		t.Errorf("Flow triggers are not covered by the validator; got: %v", warnings)
+	}
+}
+
+// Nor are polling triggers such as `core.http.Trigger` — verified live.
+func TestApply_MissingTriggerInputs_PollingTrigger_NoWarn(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+inputs:
+  - id: p
+    type: STRING
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.p }}"
+triggers:
+  - id: poll
+    type: io.kestra.plugin.core.http.Trigger
+    uri: https://example.com
+`
+	_, warnings := applyWithWarnings(t, in)
+	if warningsContain(warnings, "does not supply required input") {
+		t.Errorf("polling triggers are not covered by the validator; got: %v", warnings)
+	}
+}
+
+// `resolvableInputs()` expands a FORM into dotted leaf paths, so v2 reports the
+// missing child as `<formId>.<childId>` — the key the trigger has to supply.
+func TestApply_MissingTriggerInputs_FormInputChild_Warns(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+inputs:
+  - id: grp
+    type: FORM
+    inputs:
+      - id: child
+        type: STRING
+      - id: optional_child
+        type: STRING
+        required: false
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ inputs.grp.child }}"
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0 * * *"
+`
+	_, warnings := applyWithWarnings(t, in)
+	if !warningsContain(warnings, "does not supply required input 'grp.child'") {
+		t.Errorf("FORM children must be reported by dotted path; got: %v", warnings)
+	}
+	if warningsContain(warnings, "'grp.optional_child'") {
+		t.Errorf("`required: false` FORM child must be exempt; got: %v", warnings)
+	}
+	if warningsContain(warnings, "input 'grp'") {
+		t.Errorf("the FORM node itself must not be flagged; got: %v", warnings)
 	}
 }
 
@@ -3731,8 +3927,6 @@ namespace: company.team
 inputs:
   - id: date
     type: DATETIME
-    required: false
-    prefill: 2023-12-22T14:00:00.000Z
 tasks:
   - id: log
     type: io.kestra.plugin.core.log.Log
@@ -3746,7 +3940,7 @@ triggers:
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if warningsContain(warningMessages(warnings), "does not supply input") {
+	if warningsContain(warningMessages(warnings), "does not supply required input") {
 		t.Errorf("StayV1Compatible must not emit the v2-only trigger-input warning; got: %v", warnings)
 	}
 }
