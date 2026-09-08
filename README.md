@@ -87,7 +87,7 @@ Flows using constructs the tool cannot rewrite are still migrated as far as poss
 
 | Severity | Example | Effect on 2.0 |
 |----------|---------|---------------|
-| **v2-incompatible** (red `✗`) | a removed type such as `MultipleCondition` or `EachSequential`, flow-level `pluginDefaults`, a Schedule trigger missing an input | Kestra 2.0 **rejects the flow** — it cannot be deployed at all |
+| **v2-incompatible** (red `✗`) | a removed type such as `MultipleCondition` or `EachSequential`, flow-level `pluginDefaults`, a Schedule or Webhook trigger missing a required input | Kestra 2.0 **rejects the flow** — it cannot be deployed at all |
 | **advisory** (yellow `⚠`) | `read()` / `fileURI()` using the removed `version=` argument; tasks requiring SDK authentication (Git tasks calling the Kestra API, `io.kestra.plugin.kestra.*`, `ai.KestraFlow`) with no inline `auth:` | the flow deploys, but breaks at run time |
 
 In `--check` mode both are printed under the affected flow; in migration mode both go to stderr and the file is still written. Either way, these flows must be rewritten manually.
@@ -100,7 +100,7 @@ Every warning is followed by a `↳ docs:` line pointing at the official [Kestra
 | `MultipleCondition`, trigger `conditions` / `preconditions` / `timeWindow` that could not be rewritten | [Trigger conditions redesign](https://kestra.io/docs/migration-guide/v2.0.0/trigger-conditions-redesign) |
 | flow-level `pluginDefaults` / `taskDefaults` | [pluginDefaults removed](https://kestra.io/docs/migration-guide/v2.0.0/plugin-defaults-removed) |
 | tasks calling the Kestra API without an `auth:` block | [SDK authentication](https://kestra.io/docs/migration-guide/v2.0.0/sdk-authentication) |
-| removed core tasks (`Count`, `Resume`, `Toggle`, …), `workerGroup`, Schedule trigger inputs, Pebble `version=` | [Migration guide landing page](https://kestra.io/docs/migration-guide/v2.0.0) |
+| removed core tasks (`Count`, `Resume`, `Toggle`, …), `workerGroup`, missing trigger inputs, Pebble `version=` | [Migration guide landing page](https://kestra.io/docs/migration-guide/v2.0.0) |
 
 Programmatic users get the same link on `migrate.Warning.DocURL`.
 
