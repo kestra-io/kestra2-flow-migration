@@ -13,7 +13,7 @@ triggers:
   - id: on_failure
     type: io.kestra.plugin.core.trigger.Flow
     dependsOn:
-      - when: "{{ trigger.namespace startsWith 'company' }}"
+      - when: "{{ trigger.namespace | startsWith('company') }}"
         states:
           - FAILED
           - WARNING
