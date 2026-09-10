@@ -11,7 +11,7 @@ triggers:
   - id: listen
     type: io.kestra.plugin.core.trigger.Flow
     dependsOn:
-      - when: "{{ trigger.namespace startsWith 'company.team' }}"
+      - when: "{{ trigger.namespace | startsWith('company.team') }}"
         states:
           - FAILED
           - WARNING

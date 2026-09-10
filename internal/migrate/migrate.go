@@ -1747,6 +1747,19 @@ func rewriteOneTrigger(t *yaml.Node) []string {
 // contribute to a single `when:` clause — i.e. no `flowId:` / `states:` /
 // `labels:` field exists to receive per-field values.
 //
+// pebbleAffixTest renders a prefix/suffix test on a Pebble value.
+//
+// `startsWith` / `endsWith` are Pebble *filters*, not binary operators: the
+// operator form `{{ a startsWith 'b' }}` raises `ParserException: Unexpected
+// token of value "startsWith" and type NAME` when the trigger is evaluated
+// (kestra's Pebble `Extension.java` registers both under `getFilters()`, and
+// `getBinaryOperators()` declares no such operator). Flow validation does not
+// evaluate Pebble, so the operator form passes `flows validate` and only
+// fails at trigger time — always build these clauses through this helper.
+func pebbleAffixTest(target, filter, value string) string {
+	return fmt.Sprintf("%s | %s('%s')", target, filter, value)
+}
+
 // Returns ok=false for condition types that have no clean Pebble mapping
 // (ExecutionStatus, ExecutionLabels), for unknown condition types, and for
 // nested wrappers.
@@ -1764,9 +1777,9 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 		suffix := stringValue(c, "comparison") == "SUFFIX"
 		switch {
 		case prefix:
-			return fmt.Sprintf("trigger.namespace startsWith '%s'", ns), true
+			return pebbleAffixTest("trigger.namespace", "startsWith", ns), true
 		case suffix:
-			return fmt.Sprintf("trigger.namespace endsWith '%s'", ns), true
+			return pebbleAffixTest("trigger.namespace", "endsWith", ns), true
 		}
 		return fmt.Sprintf("trigger.namespace == '%s'", ns), true
 	case "ExecutionFlow":
@@ -1802,7 +1815,7 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 //   - ExecutionStatus     → entry `states:`
 //   - ExecutionFlow       → entry `flowId:` + `namespace:`
 //   - ExecutionNamespace  → entry `namespace:` (exact), or a when-clause
-//     using startsWith/endsWith (prefix/suffix)
+//     using the startsWith/endsWith filters (prefix/suffix)
 //   - ExecutionLabels     → entry `labels:`
 //   - ExecutionOutputs    → entry `when:` clause
 //   - HasRetryAttempt     → entry `when:` clause `hasRetryAttempt == true`
@@ -1983,9 +1996,9 @@ func collectFlowConditionFields(conds *yaml.Node, preconditionsPresent bool) (fl
 			suffix := stringValue(c, "comparison") == "SUFFIX"
 			switch {
 			case prefix:
-				cc.sharedWhenParts = append(cc.sharedWhenParts, fmt.Sprintf("trigger.namespace startsWith '%s'", ns))
+				cc.sharedWhenParts = append(cc.sharedWhenParts, pebbleAffixTest("trigger.namespace", "startsWith", ns))
 			case suffix:
-				cc.sharedWhenParts = append(cc.sharedWhenParts, fmt.Sprintf("trigger.namespace endsWith '%s'", ns))
+				cc.sharedWhenParts = append(cc.sharedWhenParts, pebbleAffixTest("trigger.namespace", "endsWith", ns))
 			default:
 				if preconditionsPresent {
 					return cc, false
@@ -2266,9 +2279,9 @@ func whereFilterToWhenFragment(f *yaml.Node) (string, bool) {
 	case "NOT_EQUALS":
 		return fmt.Sprintf("%s != '%s'", target, value), true
 	case "STARTS_WITH":
-		return fmt.Sprintf("%s startsWith '%s'", target, value), true
+		return pebbleAffixTest(target, "startsWith", value), true
 	case "ENDS_WITH":
-		return fmt.Sprintf("%s endsWith '%s'", target, value), true
+		return pebbleAffixTest(target, "endsWith", value), true
 	}
 	return "", false
 }
