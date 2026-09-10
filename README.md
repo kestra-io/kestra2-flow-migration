@@ -80,6 +80,25 @@ kestra-migrate [flags] <file.yml|dir>...
 | `--stay-v1-compatible` | Skip migration rules whose output is not valid on a v1.3 instance, so the migrated flows can still be deployed to v1.3. |
 | `--disable-v2-incompatible` | Rewrite flows that Kestra 2.0 would reject into a disabled placeholder labelled `v2-migration: needs-manual-rewrite`, keeping the original definition as comments. Off by default. |
 
+### Staying up to date
+
+Migration rules are added continuously, and an outdated binary silently skips
+the ones it does not know about — the flows it writes look fine and fail on
+deploy. So every run compares its own version against the latest GitHub
+release and prints a reminder on stderr when it is behind:
+
+```
+⚠  you are running kestra-migrate 2.0.0, but 2.1.2 is available.
+   Migration rules are added continuously — an outdated binary silently skips them.
+   Update: curl -fsSL https://raw.githubusercontent.com/kestra-io/kestra2-flow-migration/main/install-scripts/install.sh | bash
+```
+
+The check is advisory and never changes the exit code or stdout. The result is
+cached for 24h in the user cache directory, it runs concurrently with the
+migration behind a 3s timeout, and any failure (offline, GitHub down, rate
+limit) is silent. Development builds (`dev`, `pr-*`) are never checked. Set
+`KESTRA_MIGRATE_NO_UPDATE_CHECK=1` to turn it off — for example in CI.
+
 ### Examples
 
 Check which flows need migration:

@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/kestra-io/kestra2-flow-migration/internal/input"
 	"github.com/kestra-io/kestra2-flow-migration/internal/migrate"
 	"github.com/kestra-io/kestra2-flow-migration/internal/output"
+	"github.com/kestra-io/kestra2-flow-migration/internal/update"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +22,20 @@ var (
 	buildDate = "unknown"
 )
 
+// updateCheckTimeout bounds the release lookup. The check runs concurrently
+// with the migration, so this is only ever paid when the migration itself
+// finishes faster than the network round-trip.
+const updateCheckTimeout = 3 * time.Second
+
 func main() {
+	// Started before any work so the answer is usually ready by the time the
+	// migration ends; the result is printed last, after the flow output.
+	notices := startUpdateCheck()
+
+	// runCheck reports "flows need migration" through this rather than
+	// os.Exit, so the update notice below is never skipped.
+	exitCode := 0
+
 	var outDir string
 	var check bool
 	var stayV1Compatible bool
@@ -68,7 +84,7 @@ as comments.`,
 			}
 
 			if check {
-				return runCheck(flows, opts)
+				return runCheck(flows, opts, &exitCode)
 			}
 
 			w := output.New(outDir, os.Stdout)
@@ -97,13 +113,42 @@ as comments.`,
 	root.Flags().BoolVar(&stayV1Compatible, "stay-v1-compatible", false, "skip migration rules whose output is not valid on a v1.3 Kestra instance")
 	root.Flags().BoolVar(&disableV2Incompatible, "disable-v2-incompatible", false, "rewrite flows Kestra 2.0 would reject into a disabled placeholder labelled v2-migration: needs-manual-rewrite, keeping the original definition as comments")
 
-	if err := root.Execute(); err != nil {
+	err := root.Execute()
+	printUpdateNotice(notices)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }
 
-func runCheck(flows []input.Flow, opts []migrate.Option) error {
+// startUpdateCheck kicks off the release lookup in the background.
+func startUpdateCheck() <-chan *update.Notice {
+	notices := make(chan *update.Notice, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), updateCheckTimeout)
+		defer cancel()
+		notices <- update.Check(ctx, version)
+	}()
+	return notices
+}
+
+// printUpdateNotice prints the "you are outdated" banner, if any. It waits for
+// the lookup only as long as its own timeout allows, and stays silent on every
+// failure — an update check must never be the reason a migration looks broken.
+func printUpdateNotice(notices <-chan *update.Notice) {
+	select {
+	case notice := <-notices:
+		if notice != nil {
+			fmt.Fprintf(os.Stderr, "\n\033[1;33m⚠  %s\033[0m\n", notice)
+		}
+	case <-time.After(updateCheckTimeout):
+	}
+}
+
+func runCheck(flows []input.Flow, opts []migrate.Option, exitCode *int) error {
 	needsMigration := 0
 	for _, f := range flows {
 		migrated, warnings, err := migrate.Apply(f.Content, opts...)
@@ -147,7 +192,8 @@ func runCheck(flows []input.Flow, opts []migrate.Option) error {
 	fmt.Println()
 	if needsMigration > 0 {
 		fmt.Printf("\033[1;33m⚠  %d/%d flows need migration\033[0m\n", needsMigration, len(flows))
-		os.Exit(1)
+		*exitCode = 1
+		return nil
 	}
 	fmt.Printf("\033[1;32m✔  All %d flows are v2-compatible\033[0m\n", len(flows))
 	return nil

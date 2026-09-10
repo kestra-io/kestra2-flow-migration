@@ -61,6 +61,7 @@ internal/
     migrate.go       Rule implementations + helpers
     migrate_test.go  Unit tests (~190 tests)
   output/            Write to dir or stdout
+  update/            "a newer release exists" check (advisory, cached, fail-silent)
 e2e/
   validate_test.go   E2E validation against a live Kestra v2 instance (build tag: e2e)
 migration-documentation/
@@ -71,6 +72,28 @@ tools/
   comment-extend.py  Helper script for comment-based annotations
 input-flows/         ~400 Kestra flow YAML files used as migration input corpus
 ```
+
+### Update check (`internal/update`)
+
+Every run compares `main.version` against the latest GitHub release and prints
+an advisory banner on stderr when behind. Rules that a stale binary does not
+know about are skipped silently, so the stale run *looks* successful — hence
+the nag.
+
+Invariants to keep: it never affects exit code or stdout, it runs concurrently
+with the migration behind a 3s timeout, and **every** failure path returns "no
+notice". Results *and* failures are cached for 24h under
+`os.UserCacheDir()/kestra-migrate/` so an offline user does not pay the timeout
+on each invocation. Unparseable versions (`dev`, `pr-42-abc1234`) skip the
+lookup entirely; `KESTRA_MIGRATE_NO_UPDATE_CHECK` disables it.
+
+Tags carry **no `v` prefix** (`.releaserc.json` sets `tagFormat: "${version}"`,
+and goreleaser stamps `{{.Version}}`), so `parse` compares bare `2.1.2`; the
+prefix is tolerated only in case that ever changes.
+
+Because the notice prints after `root.Execute()`, `runCheck` reports "flows
+need migration" through an `*int` exit code rather than calling `os.Exit`
+directly — an `os.Exit` there would swallow the banner.
 
 ## Workflow
 
