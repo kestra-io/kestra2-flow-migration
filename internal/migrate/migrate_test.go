@@ -1,8 +1,10 @@
 package migrate
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -518,9 +520,107 @@ triggers:
         before: "2026-06-30T23:59:59Z"
 `
 	out, _ := applyWithWarnings(t, in)
-	want := `when: "{{ trigger.date > '2025-12-31T23:59:59Z' and trigger.date < '2026-06-30T23:59:59Z' }}"`
+	want := `when: "{{ (trigger.date | timestamp()) > ('2025-12-31T23:59:59Z' | timestamp()) and (trigger.date | timestamp()) < ('2026-06-30T23:59:59Z' | timestamp()) }}"`
 	if !strings.Contains(out, want) {
 		t.Errorf("missing expected `when:` expression, got:\n%s", out)
+	}
+}
+
+// One boundary is as valid as two.
+func TestApply_RewriteScheduleConditions_DateTimeBetween_AfterOnly(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DateTimeBetween
+        after: "2025-12-31T23:59:59Z"
+`
+	out, _ := applyWithWarnings(t, in)
+	want := `when: "{{ (trigger.date | timestamp()) > ('2025-12-31T23:59:59Z' | timestamp()) }}"`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing expected `when:` expression, got:\n%s", out)
+	}
+}
+
+// A boundary carrying only a time of day gives `| timestamp()` no date to work with, so it
+// takes the hourOfDay() route instead — the form the migration guide already gives for
+// TimeBetween.
+func TestApply_RewriteScheduleConditions_DateTimeBetween_TimeOfDayOnly(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: business_hours_only
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 */2 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DateTimeBetween
+        after: "08:00:00"
+        before: "18:00:00"
+`
+	out, _ := applyWithWarnings(t, in)
+	want := `when: "{{ hourOfDay(trigger.date) >= 8 and hourOfDay(trigger.date) < 18 }}"`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing expected `when:` expression, got:\n%s", out)
+	}
+}
+
+// `date` points the comparison at something other than the trigger date, and the rewrite has
+// nowhere to put it. It has to stay a warning: an expression that evaluates cleanly against the
+// wrong instant is worse than the loud failure it replaces.
+func TestApply_RewriteScheduleConditions_DateTimeBetween_CustomDateIsLeftAlone(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DateTimeBetween
+        date: "{{ trigger.date | dateAdd(-1, 'DAYS') }}"
+        after: "2025-12-31T23:59:59Z"
+`
+	out, warnings := applyWithWarnings(t, in)
+	if strings.Contains(out, "when:") {
+		t.Errorf("should not have rewritten a condition carrying its own `date`, got:\n%s", out)
+	}
+	if !strings.Contains(out, "conditions:") {
+		t.Errorf("the original `conditions:` must be preserved, got:\n%s", out)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected a warning so the user is told to rewrite it manually")
+	}
+}
+
+// Guard: no emitted `when:` may compare trigger.date against a string literal, in any of the
+// flows this repository migrates. That is the shape Kestra cannot evaluate.
+func TestEmittedWhenNeverComparesTriggerDateToLiteral(t *testing.T) {
+	bad := regexp.MustCompile(`trigger\.date\s*[<>]=?\s*'`)
+
+	root := filepath.Join("..", "..", "output-flows")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return err
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for i, line := range strings.Split(string(content), "\n") {
+			if strings.Contains(line, "when:") && bad.MatchString(line) {
+				t.Errorf("%s:%d emits a raw comparison Kestra cannot evaluate:\n  %s",
+					path, i+1, strings.TrimSpace(line))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", root, err)
 	}
 }
 

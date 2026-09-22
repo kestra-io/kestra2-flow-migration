@@ -8,4 +8,4 @@ triggers:
   - id: schedule
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "0 11 * * *"
-    when: "{{ trigger.date > '2025-12-31T23:59:59Z' and trigger.date < '2025-01-01T00:00:00Z' }}"
+    when: "{{ (trigger.date | timestamp()) > ('2025-12-31T23:59:59Z' | timestamp()) and (trigger.date | timestamp()) < ('2025-01-01T00:00:00Z' | timestamp()) }}"

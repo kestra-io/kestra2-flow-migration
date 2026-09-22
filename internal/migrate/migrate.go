@@ -1477,20 +1477,57 @@ func convertPublicHolidayCondition(c *yaml.Node) (string, bool) {
 	return fmt.Sprintf("isPublicHoliday(trigger.date, '%s')", country), true
 }
 
+// convertDateTimeBetweenCondition maps v1's `DateTimeBetween` onto a `when` expression.
+//
+// Inside a `when`, `trigger.date` is a ZonedDateTime, not a string. Comparing it
+// against a string literal never reaches Pebble's String/String shortcut and raises
+// "Could not perform greater than comparison", and the scheduler then emits a FAILED
+// execution on every scheduled date. Converting both sides with `| timestamp()`
+// compares instants numerically, which is also correct when the offsets differ.
+//
+// Boundaries that carry only a time of day are delegated to the `hourOfDay()` form,
+// since `| timestamp()` has no date to work with there.
 func convertDateTimeBetweenCondition(c *yaml.Node) (string, bool) {
 	after := stringValue(c, "after")
 	before := stringValue(c, "before")
+
+	// `date` makes the condition compare against something other than the trigger
+	// date, and the rewrite has nowhere to put it. Leaving it to the warning keeps
+	// the loud failure it already had, rather than emitting an expression that
+	// evaluates cleanly against the wrong instant.
+	if stringValue(c, "date") != "" {
+		return "", false
+	}
+
+	if isTimeOfDayOnly(after) || isTimeOfDayOnly(before) {
+		return convertTimeBetweenCondition(c)
+	}
+
 	var parts []string
 	if after != "" {
-		parts = append(parts, fmt.Sprintf("trigger.date > '%s'", after))
+		parts = append(parts, fmt.Sprintf("(trigger.date | timestamp()) > ('%s' | timestamp())", after))
 	}
 	if before != "" {
-		parts = append(parts, fmt.Sprintf("trigger.date < '%s'", before))
+		parts = append(parts, fmt.Sprintf("(trigger.date | timestamp()) < ('%s' | timestamp())", before))
 	}
 	if len(parts) == 0 {
 		return "", false
 	}
 	return strings.Join(parts, " and "), true
+}
+
+// isTimeOfDayOnly reports whether a boundary is a time of day with no date part,
+// e.g. "08:00:00" or "18:00:00+02:00", as opposed to a full instant.
+func isTimeOfDayOnly(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// A date part always carries a separator that a bare time never does.
+	if strings.ContainsAny(s, "T/") || strings.Contains(s, "-") && len(s) > 8 && s[4] == '-' {
+		return false
+	}
+	return strings.Contains(s, ":")
 }
 
 // convertTimeBetweenCondition maps v1's `TimeBetween` (HH:MM:SS[±TZ] boundaries)
