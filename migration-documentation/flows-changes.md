@@ -184,7 +184,7 @@ The full `conditions` subsystem was replaced by `when` (Pebble) on all triggers 
 - `io.kestra.plugin.core.condition.DayWeekInMonth` — `when: "{{ isDayWeekInMonth(trigger.date, '<DAY>', '<POSITION>') }}"`
 - `io.kestra.plugin.core.condition.Weekend` — `when: "{{ isWeekend(trigger.date) }}"`
 - `io.kestra.plugin.core.condition.PublicHoliday` — `when: "{{ isPublicHoliday(trigger.date, '<country>') }}"`
-- `io.kestra.plugin.core.condition.DateTimeBetween` — `when: "{{ trigger.date > '<after>' and trigger.date < '<before>' }}"`
+- `io.kestra.plugin.core.condition.DateTimeBetween` — `when: "{{ (trigger.date | timestamp()) > ('<after>' | timestamp()) and (trigger.date | timestamp()) < ('<before>' | timestamp()) }}"`
 - `io.kestra.plugin.core.condition.TimeBetween` — `when: "{{ hourOfDay(trigger.date) >= <from> and hourOfDay(trigger.date) < <to> }}"`
 - `io.kestra.plugin.core.condition.FlowCondition` / `FlowNamespaceCondition` — `dependsOn` entry with `flowId` / `namespace` (exact) or `when` with `startsWith` / `endsWith`
 
@@ -223,7 +223,7 @@ The variables available inside `when` depend on the trigger type:
 
 | Trigger type | Available variables |
 |---|---|
-| Schedule | `trigger.date`, `trigger.timestamp` |
+| Schedule | `trigger.date` |
 | Webhook | `trigger.body`, `trigger.headers` |
 | Flow | `namespace`, `flowId`, `state`, `labels`, `outputs`, `hasRetryAttempt` |
 
@@ -240,7 +240,7 @@ The variables available inside `when` depend on the trigger type:
 | `Not` > `DayWeek` (e.g. exclude SUNDAY) | `when: "{{ dayOfWeek(trigger.date) != 'SUNDAY' }}"` |
 | `PublicHoliday` (country: FR) | `when: "{{ isPublicHoliday(trigger.date, 'FR') }}"` |
 | `DayWeekInMonth` | `when: "{{ isDayWeekInMonth(trigger.date, '<DAY>', '<POSITION>') }}"` |
-| `DateTimeBetween` | `when: "{{ trigger.date > '<after>' and trigger.date < '<before>' }}"` |
+| `DateTimeBetween` | `when: "{{ (trigger.date \| timestamp()) > ('<after>' \| timestamp()) and (trigger.date \| timestamp()) < ('<before>' \| timestamp()) }}"` |
 | `TimeBetween` | `when: "{{ hourOfDay(trigger.date) >= <from> and hourOfDay(trigger.date) < <to> }}"` |
 | Multiple `Expression` conditions | Combined with `and` / `or` in a single `when` |
 
