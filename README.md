@@ -135,7 +135,8 @@ Every warning is followed by a `↳ docs:` line pointing at the official [Kestra
 | `MultipleCondition`, trigger `conditions` / `preconditions` / `timeWindow` that could not be rewritten | [Trigger conditions redesign](https://kestra.io/docs/migration-guide/v2.0.0/trigger-conditions-redesign) |
 | flow-level `pluginDefaults` / `taskDefaults` | [pluginDefaults removed](https://kestra.io/docs/migration-guide/v2.0.0/plugin-defaults-removed) |
 | tasks needing Kestra API credentials (mandatory or optional `auth:`) | [SDK authentication](https://kestra.io/docs/migration-guide/v2.0.0/sdk-authentication) |
-| removed core tasks (`Count`, `Resume`, `Toggle`, …), `workerGroup`, missing trigger inputs, Pebble `version=` | [Migration guide landing page](https://kestra.io/docs/migration-guide/v2.0.0) |
+| `workerGroup` (EE): converted keys that need a matching Worker Queue, and keys that could not be converted | [Worker Groups → Migrating from earlier versions](https://kestra.io/docs/enterprise/scalability/worker-group#migrating-from-earlier-versions) |
+| removed core tasks (`Count`, `Resume`, `Toggle`, …), missing trigger inputs, Pebble `version=` | [Migration guide landing page](https://kestra.io/docs/migration-guide/v2.0.0) |
 
 Programmatic users get the same link on `migrate.Warning.DocURL`.
 

@@ -65,7 +65,7 @@ The tool handles the following v1 → v2 changes:
 - **Property removals**: `Subflow.outputs`, `Schedule.backfills`, trigger `minLogLevel`, `options.connectionPoolIdleTimeout`
 - **PurgeKV**: deprecated `expiredOnly: <x>` → `behavior: {type: key, expiredOnly: <x>}` (preserves purge-everything semantics for `false`)
 - **Exit state**: `CANCELED` → `CANCELLED` (the v2 spelling of the same state)
-- **Worker groups (EE)**: `workerGroup: {key, fallback}` → `workerSelector: {tags: [<key>], fallback}`, pinning `fallback: WAIT` when absent (v1 waited by default; v2 fails). Templated or non-RFC-1123 keys are flagged for manual rewrite instead.
+- **Worker groups (EE)**: `workerGroup: {key, fallback}` → `workerSelector: {tags: [<key>], fallback}`, pinning `fallback: WAIT` when absent (v1 waited by default; v2 fails). Templated or non-RFC-1123 keys are flagged for manual rewrite instead. Converted keys still need infrastructure. An operator must create a Worker Queue tagged with each key and subscribe a Worker Group to it, or the tasks fail immediately. The tool reports each key as an advisory warning. See [Worker Groups → Migrating from earlier versions](https://kestra.io/docs/enterprise/scalability/worker-group#migrating-from-earlier-versions).
 - **MULTISELECT inputs**: `options` → `values`
 - **HTTP auth migration**: `basicAuthUser`/`basicAuthPassword` → `options.auth` block
 - **Input defaults constraint**: removes `required: false` on inputs with `defaults` (v2 requires these to be required)

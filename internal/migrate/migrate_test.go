@@ -2173,7 +2173,7 @@ tasks:
       key: gpu
       fallback: CANCEL
 `
-	out, warnings := applyWithWarnings(t, in)
+	out, warnings := applyWithWarningDetails(t, in)
 	if strings.Contains(out, "workerGroup:") {
 		t.Errorf("output still contains 'workerGroup:', got:\n%s", out)
 	}
@@ -2186,8 +2186,73 @@ tasks:
 	if !strings.Contains(out, "fallback: CANCEL") {
 		t.Errorf("explicit fallback must be carried over, got:\n%s", out)
 	}
-	if len(warnings) != 0 {
-		t.Errorf("expected no warnings, got: %v", warnings)
+	// The flow saves on 2.0, but routing still needs a Worker Queue tagged
+	// "gpu" on the instance — reported as advisory, never as blocking.
+	if len(warnings) != 1 {
+		t.Fatalf("expected one advisory warning, got: %v", warnings)
+	}
+	w := warnings[0]
+	if w.V2Incompatible {
+		t.Errorf("a converted workerGroup must be advisory, got v2-incompatible: %v", w)
+	}
+	if w.DocURL != docWorkerGroup {
+		t.Errorf("DocURL = %q, want %q", w.DocURL, docWorkerGroup)
+	}
+	if !strings.Contains(w.Message, `Worker Queue tagged "gpu"`) || !strings.Contains(w.Message, "heavy") {
+		t.Errorf("advisory must name the queue tag and the task, got: %s", w.Message)
+	}
+}
+
+func TestApply_WorkerGroupToWorkerSelector_OneAdvisoryPerKey(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: first
+    type: io.kestra.plugin.core.log.Log
+    message: hello
+    workerGroup:
+      key: gpu
+  - id: second
+    type: io.kestra.plugin.core.log.Log
+    message: hello
+    workerGroup:
+      key: gpu
+  - id: third
+    type: io.kestra.plugin.core.log.Log
+    message: hello
+    workerGroup:
+      key: etl
+`
+	_, warnings := applyWithWarningDetails(t, in)
+	if len(warnings) != 2 {
+		t.Fatalf("expected one advisory per distinct key, got: %v", warnings)
+	}
+	if !strings.Contains(warnings[0].Message, `"gpu" (first, second)`) {
+		t.Errorf("first advisory must list both gpu tasks, got: %s", warnings[0].Message)
+	}
+	if !strings.Contains(warnings[1].Message, `"etl" (third)`) {
+		t.Errorf("second advisory must cover etl, got: %s", warnings[1].Message)
+	}
+}
+
+func TestApply_WorkerGroupToWorkerSelector_AdvisoryDoesNotDisable(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: heavy
+    type: io.kestra.plugin.core.log.Log
+    message: hello
+    workerGroup:
+      key: gpu
+`
+	out, _ := applyWithWarningDetails(t, in, DisableV2Incompatible())
+	if strings.Contains(out, "disabled: true") {
+		t.Errorf("a converted workerGroup must not disable the flow, got:\n%s", out)
+	}
+	if !strings.Contains(out, "workerSelector:") {
+		t.Errorf("output missing 'workerSelector:', got:\n%s", out)
 	}
 }
 
@@ -2221,12 +2286,15 @@ tasks:
     workerGroup:
       key: GPU_Workers
 `
-	out, warnings := applyWithWarnings(t, in)
+	out, warnings := applyWithWarningDetails(t, in)
 	if !strings.Contains(out, "workerGroup:") {
 		t.Errorf("non-compliant key must be left untouched, got:\n%s", out)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "RFC 1123") {
-		t.Errorf("expected one RFC 1123 warning, got: %v", warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Message, "RFC 1123") {
+		t.Fatalf("expected one RFC 1123 warning, got: %v", warnings)
+	}
+	if !warnings[0].V2Incompatible || warnings[0].DocURL != docWorkerGroup {
+		t.Errorf("leftover workerGroup must be v2-incompatible and link %s, got: %+v", docWorkerGroup, warnings[0])
 	}
 }
 

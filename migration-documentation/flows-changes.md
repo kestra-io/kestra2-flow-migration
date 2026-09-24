@@ -197,7 +197,7 @@ Warnings emitted by the migrator fall into two severities, decided by whether Ke
 | Severity | Warnings | Effect on 2.0 |
 |----------|----------|---------------|
 | **v2-incompatible** | removed types, flow-level `pluginDefaults` / `taskDefaults`, unrewritten trigger `conditions` / `preconditions` / `scheduleConditions`, leftover `workerGroup`, Schedule triggers missing an input without `defaults` | Flow is **rejected**; it cannot be deployed at all |
-| **advisory** | Pebble `read()` / `fileURI()` using the removed `version=` argument, tasks whose *optional* `auth:` is unset (`kestra.*`, `git.SyncFlows` / `Sync` / `PushFlows`) | Flow deploys; breaks at run time |
+| **advisory** | Pebble `read()` / `fileURI()` using the removed `version=` argument, tasks whose *optional* `auth:` is unset (`kestra.*`, `git.SyncFlows` / `Sync` / `PushFlows`), converted `workerGroup` keys that need a matching Worker Queue | Flow deploys; breaks at run time |
 
 `--disable-v2-incompatible` (off by default) rewrites every flow carrying at least one **v2-incompatible** warning into a deployable placeholder, so that a bulk migration can be pushed to a 2.0 instance in one go and the flows needing manual work are visible in the UI instead of failing silently at deploy time:
 
@@ -280,7 +280,9 @@ All OSS flow changes apply to EE. Additional EE-only flow changes are listed bel
   - `workerGroup.key: <k>` → `workerSelector.tags: [<k>]` — each tag must be an **RFC 1123 label** (lowercase alphanumerics and hyphens, must start/end alphanumeric, ≤ 63 chars); v1 keys that don't comply (uppercase, underscores, templated `{{ ... }}` values) cannot be mapped mechanically and are flagged with a validation warning.
   - `match` is new (`ALL` | `ANY`, default `ALL`) — a single-tag selector behaves like the old single key either way.
   - **Fallback default flipped:** v1 `workerGroup.fallback` defaulted to `WAIT`; v2 `workerSelector.fallback` defaults to **`FAIL`** when unset. To preserve v1 behavior the migration pins `fallback: WAIT` when v1 omitted it. v2 adds a fourth value `IGNORE` (drop the tag requirement, route to the default queue). `fallback` without `tags` is invalid in v2, so a v1 `workerGroup` carrying only `fallback` is flagged with a warning instead of converted.
+  - **Routing needs infrastructure the flow cannot declare:** v2 routes `workerSelector.tags` to a **Worker Queue** carrying those tags, and a Worker Group must subscribe to it. The v1 group name is not enough on its own. If no queue matches, the task fails immediately, whatever `fallback` says (a missing queue is a configuration error, not a capacity gap). So every successful conversion also emits an **advisory** warning, one per distinct key per flow, naming the queue to create. It is advisory rather than v2-incompatible because 2.0 saves the flow and only fails at run time. The unmappable cases above stay v2-incompatible, since 2.0 rejects the leftover `workerGroup` on save.
   - Automated on the v2 path; skipped under `--stay-v1-compatible` (`workerSelector` does not exist on v1.3).
+  - All worker-group warnings link [Worker Groups → Migrating from earlier versions](https://kestra.io/docs/enterprise/scalability/worker-group#migrating-from-earlier-versions). The 2.0 migration guide has no dedicated sub-page for this change.
 - **Azure Log Exporter split:** Replace `io.kestra.plugin.ee.azure.LogExporter` with `io.kestra.plugin.ee.azure.monitor.LogExporter` or `io.kestra.plugin.ee.azure.storage.LogExporter`.
 - **Cross-namespace `kv()` permission check:** Ensure the execution has access to the target namespace or update role bindings.
 - **PurgeAuditLogs property rename:** Replace `permissions` with `resources` in `io.kestra.plugin.ee.core.log.PurgeAuditLogs` tasks.

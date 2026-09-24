@@ -75,13 +75,15 @@ func (w Warning) String() string { return w.Message }
 
 // Official Kestra 2.0 migration guide pages, one per warning family. The
 // landing page is the fallback for changes without a dedicated sub-page
-// (removed core tasks, worker groups, Schedule trigger inputs, …).
+// (removed core tasks, Schedule trigger inputs, …). Worker groups have no
+// guide sub-page; their migration section lives on the EE feature page.
 const (
 	DocMigrationGuide    = "https://kestra.io/docs/migration-guide/v2.0.0"
 	docForEachLoop       = DocMigrationGuide + "/foreach-loop"
 	docTriggerConditions = DocMigrationGuide + "/trigger-conditions-redesign"
 	docSDKAuth           = DocMigrationGuide + "/sdk-authentication"
 	docPluginDefaults    = DocMigrationGuide + "/plugin-defaults-removed"
+	docWorkerGroup       = "https://kestra.io/docs/enterprise/scalability/worker-group#migrating-from-earlier-versions"
 )
 
 // v2Incompatible tags detector output as "2.0 refuses to save this flow".
@@ -158,7 +160,9 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// place (it still parses on v2).
 		migratePurgeKVExpiredOnly(&doc)
 		// `workerSelector` does not exist on v1.3 (EE worker routing).
-		warnings = append(warnings, v2Incompatible(migrateWorkerGroupToWorkerSelector(&doc), DocMigrationGuide)...)
+		// Mixed severity: an unmappable key blocks the save, a converted one
+		// still needs a matching Worker Queue on the instance.
+		warnings = append(warnings, migrateWorkerGroupToWorkerSelector(&doc)...)
 		// v2-only validation: Schedule triggers must supply every input lacking
 		// a `defaults`. Warning-only (values can't be invented); a v1-compatible
 		// flow is unaffected, so this is gated to the v2 path.
@@ -753,11 +757,19 @@ var rfc1123Label = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // templated or not valid RFC 1123 labels (v2 tags must be) cannot be mapped
 // mechanically and produce a validation warning instead. A workerGroup with a
 // fallback but no key is also warning-only: v2 rejects fallback without tags.
+// Those three cases are v2-incompatible (2.0 rejects the leftover workerGroup
+// on save). A successful conversion is advisory: v2 routes tags to a Worker
+// Queue the flow cannot declare, and with no matching queue the task fails at
+// run time — so each converted key is reported once per flow.
 // Called as a gated post-step in Apply (skipped under StayV1Compatible)
 // because workerSelector does not exist on v1.3.
 // (flows-changes.md EE: workerGroup → workerSelector)
-func migrateWorkerGroupToWorkerSelector(doc *yaml.Node) []string {
-	var warnings []string
+func migrateWorkerGroupToWorkerSelector(doc *yaml.Node) []Warning {
+	var messages []string
+	// Converted keys in first-seen order, with the ids of the tasks and
+	// triggers that used each one.
+	var keys []string
+	idsByKey := map[string][]string{}
 	walkMappings(doc, func(m *yaml.Node) {
 		wg := mappingValue(m, "workerGroup")
 		if wg == nil || wg.Kind != yaml.MappingNode {
@@ -770,15 +782,15 @@ func migrateWorkerGroupToWorkerSelector(doc *yaml.Node) []string {
 		key := stringValue(wg, "key")
 		fallback := stringValue(wg, "fallback")
 		if key == "" {
-			warnings = append(warnings, fmt.Sprintf("%s has a workerGroup without a key; v2's workerSelector rejects fallback without tags — rewrite manually (workerGroup is removed in v2)", id))
+			messages = append(messages, fmt.Sprintf("%s has a workerGroup without a key; v2's workerSelector rejects fallback without tags — rewrite manually (workerGroup is removed in v2)", id))
 			return
 		}
 		if strings.Contains(key, "{{") {
-			warnings = append(warnings, fmt.Sprintf("%s has a templated workerGroup.key (%s); it cannot be mapped to workerSelector.tags mechanically — rewrite manually (workerGroup is removed in v2)", id, key))
+			messages = append(messages, fmt.Sprintf("%s has a templated workerGroup.key (%s); it cannot be mapped to workerSelector.tags mechanically — rewrite manually (workerGroup is removed in v2)", id, key))
 			return
 		}
 		if !rfc1123Label.MatchString(key) {
-			warnings = append(warnings, fmt.Sprintf("%s has workerGroup.key %q, which is not an RFC 1123 label (lowercase alphanumerics and hyphens only); v2 workerSelector tags must comply — rename the worker group and rewrite manually", id, key))
+			messages = append(messages, fmt.Sprintf("%s has workerGroup.key %q, which is not an RFC 1123 label (lowercase alphanumerics and hyphens only); v2 workerSelector tags must comply — rename the worker group and rewrite manually", id, key))
 			return
 		}
 		tags := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
@@ -800,10 +812,21 @@ func migrateWorkerGroupToWorkerSelector(doc *yaml.Node) []string {
 			if m.Content[i].Value == "workerGroup" {
 				m.Content[i].Value = "workerSelector"
 				m.Content[i+1] = sel
-				return
+				break
 			}
 		}
+		if _, seen := idsByKey[key]; !seen {
+			keys = append(keys, key)
+		}
+		idsByKey[key] = append(idsByKey[key], id)
 	})
+	warnings := v2Incompatible(messages, docWorkerGroup)
+	for _, key := range keys {
+		warnings = append(warnings, Warning{
+			Message: fmt.Sprintf("workerGroup.key %q (%s) was converted to workerSelector.tags [%s] — v2 routes by Worker Queue tag: create a Worker Queue tagged %q and subscribe a Worker Group to it, or these tasks fail immediately", key, strings.Join(idsByKey[key], ", "), key, key),
+			DocURL:  docWorkerGroup,
+		})
+	}
 	return warnings
 }
 
