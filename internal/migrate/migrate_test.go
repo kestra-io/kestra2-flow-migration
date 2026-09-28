@@ -139,6 +139,81 @@ tasks:
 	}
 }
 
+func TestApply_InputRules_NestedOnResume(t *testing.T) {
+	// Every input rule, not only the type rename, has to reach `onResume`:
+	// v2 rejects a v1-shaped definition there as it does at the root.
+	out := apply(t, `id: f
+namespace: company.team
+tasks:
+  - id: wait
+    type: io.kestra.plugin.core.flow.Pause
+    onResume:
+      - name: approve
+        type: BOOLEAN
+      - id: picks
+        type: MULTISELECT
+        options: [a, b]
+      - id: reason
+        type: STRING
+        defaults: ok
+        required: false
+`)
+	for _, bad := range []string{"name: approve", "options:", "required: false"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("onResume input still has %q; got:\n%s", bad, out)
+		}
+	}
+	for _, want := range []string{"id: approve", "values: [a, b]", "type: BOOL\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("onResume input missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
+func TestApply_InputRules_FormChildren(t *testing.T) {
+	out := apply(t, `id: f
+namespace: company.team
+inputs:
+  - id: form
+    type: FORM
+    inputs:
+      - name: flag
+        type: BOOLEAN
+      - id: kind
+        type: ENUM
+        values: [a, b]
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+`)
+	for _, want := range []string{"id: flag", "type: BOOL\n", "type: SELECT"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("FORM child missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
+func TestApply_InputRules_LeaveAssetInputsAlone(t *testing.T) {
+	// An asset's `inputs` is a list of asset references, not input definitions.
+	in := `id: f
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+    assets:
+      inputs:
+        - name: ref
+          type: BOOLEAN
+          defaults: x
+          required: false
+`
+	if out := apply(t, in); out != in {
+		t.Errorf("asset inputs were rewritten; got:\n%s", out)
+	}
+}
+
 func TestApply_RenameInputType_BOOLEAN(t *testing.T) {
 	in := `
 id: test-flow

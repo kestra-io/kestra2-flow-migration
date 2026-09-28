@@ -337,52 +337,70 @@ func marshalYAML(doc *yaml.Node) ([]byte, error) {
 
 // ── Rules ────────────────────────────────────────────────────────────────────
 
-// renameInputNameToID renames the `name:` field to `id:` on each item in the
-// top-level `inputs:` sequence. (flows-changes.md: Inputs `name` removed)
-func renameInputNameToID(doc *yaml.Node) error {
-	root := docRoot(doc)
-	if root == nil {
-		return nil
-	}
-	inputs := mappingValue(root, "inputs")
-	if inputs == nil || inputs.Kind != yaml.SequenceNode {
-		return nil
-	}
-	for _, item := range inputs.Content {
-		if item.Kind == yaml.MappingNode {
-			renameKey(item, "name", "id")
+// inputDefinitions calls fn on every input definition in the flow: the
+// top-level `inputs:`, each `onResume:` list (Pause and WaitFor declare their
+// own), and the children of a FORM input in either place. The input rules
+// below all go through it so that none of them handles only the root: a nested
+// definition left in v1 shape is rejected on save just like a top-level one,
+// and the flow would still be reported as v2-compatible.
+//
+// Scoped to those three places on purpose. A Subflow's or trigger's `inputs`
+// is a mapping of name to value, and an asset's `inputs` is a list of asset
+// references, so matching every `inputs:` key would rename properties there.
+func inputDefinitions(doc *yaml.Node, fn func(*yaml.Node)) {
+	visit := func(seq *yaml.Node) {
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return
+		}
+		for _, item := range seq.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			fn(item)
+			if stringValue(item, "type") != formInputType {
+				continue
+			}
+			// FORM nesting is rejected by validation, so this is a single level.
+			children := mappingValue(item, "inputs")
+			if children == nil || children.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, child := range children.Content {
+				if child.Kind == yaml.MappingNode {
+					fn(child)
+				}
+			}
 		}
 	}
+	if root := docRoot(doc); root != nil && root.Kind == yaml.MappingNode {
+		visit(mappingValue(root, "inputs"))
+	}
+	walkMappings(doc, func(m *yaml.Node) {
+		visit(mappingValue(m, "onResume"))
+	})
+}
+
+// renameInputNameToID renames the `name:` field to `id:` on every input
+// definition. (flows-changes.md: Inputs `name` removed)
+func renameInputNameToID(doc *yaml.Node) error {
+	inputDefinitions(doc, func(item *yaml.Node) {
+		renameKey(item, "name", "id")
+	})
 	return nil
 }
 
 // renameInputTypes renames deprecated input type values:
 // BOOLEAN → BOOL, ENUM → SELECT. (flows-changes.md: Input type BOOLEAN/ENUM removed)
 //
-// Input definitions are not only at the root. Pause and WaitFor declare their
-// own under `onResume`, and the server rejects a BOOLEAN there just as loudly
-// ("Validation error: Invalid type: BOOLEAN"). Matching only the root left
-// those behind and still reported the flow as v2-compatible, so this walks
-// every mapping instead. A Subflow's `inputs` is a mapping of name to value
-// rather than a sequence of definitions, which the Kind check skips.
+// The server rejects a BOOLEAN under `onResume` just as loudly as at the root
+// ("Validation error: Invalid type: BOOLEAN"), hence inputDefinitions.
 func renameInputTypes(doc *yaml.Node) error {
-	walkMappings(doc, func(m *yaml.Node) {
-		for _, key := range []string{"inputs", "onResume"} {
-			seq := mappingValue(m, key)
-			if seq == nil || seq.Kind != yaml.SequenceNode {
-				continue
-			}
-			for _, item := range seq.Content {
-				if item.Kind != yaml.MappingNode {
-					continue
-				}
-				switch stringValue(item, "type") {
-				case "BOOLEAN":
-					setStringValue(item, "type", "BOOL")
-				case "ENUM":
-					setStringValue(item, "type", "SELECT")
-				}
-			}
+	inputDefinitions(doc, func(item *yaml.Node) {
+		switch stringValue(item, "type") {
+		case "BOOLEAN":
+			setStringValue(item, "type", "BOOL")
+		case "ENUM":
+			setStringValue(item, "type", "SELECT")
 		}
 	})
 	return nil
@@ -984,19 +1002,11 @@ func detectSdkAuth(doc *yaml.Node) []Warning {
 // renameMultiselectOptions renames `options` → `values` on MULTISELECT inputs.
 // (flows-changes.md: MultiselectInput.options removed)
 func renameMultiselectOptions(doc *yaml.Node) error {
-	root := docRoot(doc)
-	if root == nil {
-		return nil
-	}
-	inputs := mappingValue(root, "inputs")
-	if inputs == nil || inputs.Kind != yaml.SequenceNode {
-		return nil
-	}
-	for _, item := range inputs.Content {
-		if item.Kind == yaml.MappingNode && stringValue(item, "type") == "MULTISELECT" {
+	inputDefinitions(doc, func(item *yaml.Node) {
+		if stringValue(item, "type") == "MULTISELECT" {
 			renameKey(item, "options", "values")
 		}
-	}
+	})
 	return nil
 }
 
@@ -1005,22 +1015,11 @@ func renameMultiselectOptions(doc *yaml.Node) error {
 // default), since the default is always applied.
 // (flows-changes.md: Inputs with defaults must be required)
 func removeRequiredFalseWithDefaults(doc *yaml.Node) error {
-	root := docRoot(doc)
-	if root == nil {
-		return nil
-	}
-	inputs := mappingValue(root, "inputs")
-	if inputs == nil || inputs.Kind != yaml.SequenceNode {
-		return nil
-	}
-	for _, item := range inputs.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
+	inputDefinitions(doc, func(item *yaml.Node) {
 		if mappingValue(item, "defaults") != nil && stringValue(item, "required") == "false" {
 			removeKey(item, "required")
 		}
-	}
+	})
 	return nil
 }
 
