@@ -94,6 +94,51 @@ tasks:
 
 // ── Rule: renameInputTypes ────────────────────────────────────────────────────
 
+func TestApply_RenameInputType_NestedOnResume(t *testing.T) {
+	out := apply(t, `id: f
+namespace: company.team
+inputs:
+  - id: topLevel
+    type: BOOLEAN
+tasks:
+  - id: wait
+    type: io.kestra.plugin.core.flow.Pause
+    onResume:
+      - id: nested
+        type: BOOLEAN
+      - id: choice
+        type: ENUM
+        values: [a, b]
+`)
+	if strings.Contains(out, "type: BOOLEAN") {
+		t.Errorf("onResume input type not renamed; got:\n%s", out)
+	}
+	if strings.Contains(out, "type: ENUM") {
+		t.Errorf("onResume ENUM not renamed to SELECT; got:\n%s", out)
+	}
+	if strings.Count(out, "type: BOOL\n") != 2 {
+		t.Errorf("expected both root and onResume inputs as BOOL; got:\n%s", out)
+	}
+}
+
+func TestApply_RenameInputType_LeavesSubflowInputsAlone(t *testing.T) {
+	// A Subflow's `inputs` is a mapping of name to value, not a sequence of
+	// definitions. A key literally called "type" there must not be touched.
+	out := apply(t, `id: f
+namespace: company.team
+tasks:
+  - id: call
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: company.team
+    flowId: other
+    inputs:
+      type: BOOLEAN
+`)
+	if !strings.Contains(out, "type: BOOLEAN") {
+		t.Errorf("subflow input value was rewritten; got:\n%s", out)
+	}
+}
+
 func TestApply_RenameInputType_BOOLEAN(t *testing.T) {
 	in := `
 id: test-flow

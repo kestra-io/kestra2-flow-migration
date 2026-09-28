@@ -358,26 +358,33 @@ func renameInputNameToID(doc *yaml.Node) error {
 
 // renameInputTypes renames deprecated input type values:
 // BOOLEAN → BOOL, ENUM → SELECT. (flows-changes.md: Input type BOOLEAN/ENUM removed)
+//
+// Input definitions are not only at the root. Pause and WaitFor declare their
+// own under `onResume`, and the server rejects a BOOLEAN there just as loudly
+// ("Validation error: Invalid type: BOOLEAN"). Matching only the root left
+// those behind and still reported the flow as v2-compatible, so this walks
+// every mapping instead. A Subflow's `inputs` is a mapping of name to value
+// rather than a sequence of definitions, which the Kind check skips.
 func renameInputTypes(doc *yaml.Node) error {
-	root := docRoot(doc)
-	if root == nil {
-		return nil
-	}
-	inputs := mappingValue(root, "inputs")
-	if inputs == nil || inputs.Kind != yaml.SequenceNode {
-		return nil
-	}
-	for _, item := range inputs.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
+	walkMappings(doc, func(m *yaml.Node) {
+		for _, key := range []string{"inputs", "onResume"} {
+			seq := mappingValue(m, key)
+			if seq == nil || seq.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, item := range seq.Content {
+				if item.Kind != yaml.MappingNode {
+					continue
+				}
+				switch stringValue(item, "type") {
+				case "BOOLEAN":
+					setStringValue(item, "type", "BOOL")
+				case "ENUM":
+					setStringValue(item, "type", "SELECT")
+				}
+			}
 		}
-		switch stringValue(item, "type") {
-		case "BOOLEAN":
-			setStringValue(item, "type", "BOOL")
-		case "ENUM":
-			setStringValue(item, "type", "SELECT")
-		}
-	}
+	})
 	return nil
 }
 
