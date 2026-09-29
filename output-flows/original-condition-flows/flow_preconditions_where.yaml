@@ -10,4 +10,4 @@ triggers:
   - id: listen
     type: io.kestra.plugin.core.trigger.Flow
     dependsOn:
-      - when: "{{ (trigger.namespace startsWith 'io.kestra.tests') and (labels.some == 'label') }}"
+      - when: "{{ (trigger.namespace | startsWith('io.kestra.tests')) and (labels.some == 'label') }}"

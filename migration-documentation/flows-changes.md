@@ -81,7 +81,7 @@ Last reconciled against the customer-facing v2.0.0 migration guide on **2026-08-
   - **`ForEachItem`:** `batch.rows: 1` maps to a plain `Loop` over the source URI (one line per iteration). For flows that relied on per-batch isolation, use `io.kestra.plugin.core.storage.Split` (`rows: <batchSize>`) → `Loop` over `outputs.split.uris` → `Subflow` per batch, then `Concat` over `loopOutputs(...)`. `subflowOutputs` becomes a flow-level `outputs:` declaration in the child flow.
 - **Pebble `json` filter and function removed:** Replace the `json` Pebble filter with `toJson` and the `json()` Pebble function with `fromJson()` (identical signature and behavior). The `json` Pebble *test* (`{% if x is json %}`) is unrelated and still works — only the filter and function forms change. Verified in code on `releases/v2.0.x`: only `ToJsonFilter.java` and `FromJsonFunction.java` exist. Note the customer guide (`migration-guide/v2.0.0/json-function-removed`) documents only the `json()` **function**; the `json` **filter** removal is equally breaking and is not covered there. See `migration-guide/v2.0.0/json-function-removed`.
 - **`MultipleCondition` removed:** Replace `io.kestra.plugin.core.condition.MultipleCondition` with a top-level `dependsOn` list on the Flow trigger (one entry per upstream flow). Arbitrary string keys used as wrapper ids are dropped. `window`/`windowAdvance` move to the new top-level `window` block.
-- **`FlowCondition` and `FlowNamespaceCondition` removed:** Replace `io.kestra.plugin.core.condition.FlowCondition` and `io.kestra.plugin.core.condition.FlowNamespaceCondition` with a `dependsOn` entry using the `flowId` / `namespace` properties. For prefix/pattern namespace matching, move the logic into `when` using `startsWith` / `endsWith`.
+- **`FlowCondition` and `FlowNamespaceCondition` removed:** Replace `io.kestra.plugin.core.condition.FlowCondition` and `io.kestra.plugin.core.condition.FlowNamespaceCondition` with a `dependsOn` entry using the `flowId` / `namespace` properties. For prefix/pattern namespace matching, move the logic into `when` using the `startsWith` / `endsWith` **filters** (`{{ trigger.namespace | startsWith('company') }}`).
 - **JSON flow definitions removed:** Flow definitions must be in YAML format. JSON-defined flows are no longer accepted.
 - **`FILE` input `extension` property removed:** Remove the `extension` property from `FILE`-type inputs; it is no longer enforced.
 - **`Count` execution task removed:** `io.kestra.plugin.core.execution.Count` is removed. Use KV Store or custom logic for execution counting.
@@ -170,10 +170,18 @@ The following types are removed in v2 with no drop-in replacement. Flows using t
 
 The full `conditions` subsystem was replaced by `when` (Pebble) on all triggers and `dependsOn` on Flow triggers. Every trigger-side condition type listed below is removed and must be rewritten. See "Trigger conditions → `when` / `dependsOn`" below for the mapping.
 
+> **`startsWith` / `endsWith` are Pebble filters, not operators.** They must be written
+> `{{ trigger.namespace | startsWith('company') }}`. The operator form
+> `{{ trigger.namespace startsWith 'company' }}` raises
+> `ParserException: Unexpected token of value "startsWith" and type NAME` when the trigger is
+> evaluated — Kestra's Pebble `Extension.java` registers both under `getFilters()`, and
+> `getBinaryOperators()` declares no such operator. Flow validation does not evaluate Pebble, so
+> the broken form passes `flows validate` and only fails at trigger time.
+
 - `io.kestra.plugin.core.condition.MultipleCondition` — rewrite as `dependsOn` entries on the Flow trigger
 - `io.kestra.plugin.core.condition.ExecutionStatus` — `dependsOn` entry with `states`, or `when` on a `dependsOn` entry
 - `io.kestra.plugin.core.condition.ExecutionFlow` — `dependsOn` entry with `flowId` + `namespace`
-- `io.kestra.plugin.core.condition.ExecutionNamespace` — `dependsOn` entry with `namespace` (exact) or `when` using `startsWith` / `endsWith`
+- `io.kestra.plugin.core.condition.ExecutionNamespace` — `dependsOn` entry with `namespace` (exact) or `when` using the `startsWith` / `endsWith` filters
 - `io.kestra.plugin.core.condition.ExecutionLabels` — `dependsOn` entry with `labels`
 - `io.kestra.plugin.core.condition.ExecutionOutputs` — `when` expression on a `dependsOn` entry accessing `outputs`
 - `io.kestra.plugin.core.condition.HasRetryAttempt` — `dependsOn` `when: "{{ hasRetryAttempt == true }}"`
@@ -186,7 +194,7 @@ The full `conditions` subsystem was replaced by `when` (Pebble) on all triggers 
 - `io.kestra.plugin.core.condition.PublicHoliday` — `when: "{{ isPublicHoliday(trigger.date, '<country>') }}"`
 - `io.kestra.plugin.core.condition.DateTimeBetween` — `when: "{{ trigger.date > '<after>' and trigger.date < '<before>' }}"`
 - `io.kestra.plugin.core.condition.TimeBetween` — `when: "{{ hourOfDay(trigger.date) >= <from> and hourOfDay(trigger.date) < <to> }}"`
-- `io.kestra.plugin.core.condition.FlowCondition` / `FlowNamespaceCondition` — `dependsOn` entry with `flowId` / `namespace` (exact) or `when` with `startsWith` / `endsWith`
+- `io.kestra.plugin.core.condition.FlowCondition` / `FlowNamespaceCondition` — `dependsOn` entry with `flowId` / `namespace` (exact) or `when` with the `startsWith` / `endsWith` filters
 
 The old-path variants under `io.kestra.core.models.conditions.types.*` (same class names with a `Condition` suffix) are removed in the same way.
 
@@ -251,7 +259,7 @@ Both the trigger-level `conditions` list and the `preconditions` object are repl
 | Old shape | New |
 |---|---|
 | `conditions` with `ExecutionStatus` + `ExecutionFlow` | `dependsOn` entry with `states` and `flowId` / `namespace` |
-| `conditions` with `ExecutionNamespace` (prefix/suffix) | `dependsOn` entry with `when` using `startsWith` / `endsWith` |
+| `conditions` with `ExecutionNamespace` (prefix/suffix) | `dependsOn` entry with `when` using the `startsWith` / `endsWith` filters |
 | `conditions` with `ExecutionLabels` | `dependsOn` entry with `labels` |
 | `conditions` with `ExecutionOutputs` expression | `dependsOn` entry with `when` accessing `outputs` |
 | `conditions` with `HasRetryAttempt` | `dependsOn` entry with `when: "{{ hasRetryAttempt == true }}"` |
