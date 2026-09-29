@@ -1603,21 +1603,69 @@ func convertDateTimeBetweenCondition(c *yaml.Node) (string, bool) {
 		return "", false
 	}
 
-	if isTimeOfDayOnly(after) || isTimeOfDayOnly(before) {
+	// A template renders to an instant, so it never takes the time-of-day route.
+	if !isTemplated(after) && isTimeOfDayOnly(after) || !isTemplated(before) && isTimeOfDayOnly(before) {
 		return convertTimeBetweenCondition(c)
+	}
+
+	afterOperand, ok := dateTimeBoundOperand(after)
+	if !ok {
+		return "", false
+	}
+	beforeOperand, ok := dateTimeBoundOperand(before)
+	if !ok {
+		return "", false
 	}
 
 	var parts []string
 	if after != "" {
-		parts = append(parts, fmt.Sprintf("(trigger.date | timestamp()) > ('%s' | timestamp())", after))
+		parts = append(parts, "(trigger.date | timestamp()) > "+afterOperand)
 	}
 	if before != "" {
-		parts = append(parts, fmt.Sprintf("(trigger.date | timestamp()) < ('%s' | timestamp())", before))
+		parts = append(parts, "(trigger.date | timestamp()) < "+beforeOperand)
 	}
 	if len(parts) == 0 {
 		return "", false
 	}
 	return strings.Join(parts, " and "), true
+}
+
+// dateTimeBoundOperand renders one DateTimeBetween boundary as a `| timestamp()`
+// operand. v1 rendered `after`/`before` as expressions, so `{{ now() }}` was a
+// valid boundary; quoting it as a literal nests `{{` inside the `when`, which
+// Pebble cannot parse, and every scheduled date then fails. A boundary that is a
+// single expression is inlined instead. One that mixes literal text with a
+// template ("2025-{{ month }}-01") has no clean inline form and returns ok=false,
+// as does a literal carrying a quote.
+func dateTimeBoundOperand(s string) (string, bool) {
+	if s == "" {
+		return "", true
+	}
+	if expr, ok := soleExpression(s); ok {
+		return "((" + expr + ") | timestamp())", true
+	}
+	if isTemplated(s) || strings.Contains(s, "'") {
+		return "", false
+	}
+	return "('" + s + "' | timestamp())", true
+}
+
+// soleExpression returns the inner expression when s is exactly one `{{ … }}`
+// block, surrounding whitespace aside.
+func soleExpression(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "{{") || !strings.HasSuffix(s, "}}") {
+		return "", false
+	}
+	inner := strings.TrimSpace(s[2 : len(s)-2])
+	if inner == "" || strings.Contains(inner, "{{") || strings.Contains(inner, "}}") {
+		return "", false
+	}
+	return inner, true
+}
+
+func isTemplated(s string) bool {
+	return strings.Contains(s, "{{") || strings.Contains(s, "{%")
 }
 
 // isTriggerDateExpression reports whether s is exactly `{{ trigger.date }}`,
@@ -1650,59 +1698,99 @@ func isTimeOfDayOnly(s string) bool {
 // rewrite when both `after` and `before` land on a whole hour — anything with
 // a non-zero minute or second would silently lose precision. When only one
 // boundary is present we emit only that half of the comparison.
+//
+// Two v1 semantics have to be carried over explicitly, or the rewrite deploys
+// cleanly and fires at the wrong hours:
+//
+//   - v1 compared OffsetTimes, i.e. instants, while `hourOfDay()` reads the local
+//     hour of whatever it is given — and `trigger.date` is in the Schedule's own
+//     timezone. A boundary offset is therefore applied to the date first, with
+//     `| date(timeZone=…)`. Boundaries with two different offsets are left as a
+//     warning rather than normalised, since the hours no longer line up.
+//   - When `after` is not before `before`, v1 read the window as wrapping past
+//     midnight (`after` OR `before`). An `and` there is never true.
+//
+// A custom `date` is left as a warning, like DateTimeBetween's.
 func convertTimeBetweenCondition(c *yaml.Node) (string, bool) {
+	if date := stringValue(c, "date"); date != "" && !isTriggerDateExpression(date) {
+		return "", false
+	}
 	after := stringValue(c, "after")
 	before := stringValue(c, "before")
-	var parts []string
+
+	var afterHour, beforeHour int
+	var afterZone, beforeZone string
+	var ok bool
 	if after != "" {
-		h, ok := parseWholeHour(after)
-		if !ok {
+		if afterHour, afterZone, ok = parseWholeHour(after); !ok {
 			return "", false
 		}
-		parts = append(parts, fmt.Sprintf("hourOfDay(trigger.date) >= %d", h))
 	}
 	if before != "" {
-		h, ok := parseWholeHour(before)
-		if !ok {
+		if beforeHour, beforeZone, ok = parseWholeHour(before); !ok {
 			return "", false
 		}
-		parts = append(parts, fmt.Sprintf("hourOfDay(trigger.date) < %d", h))
 	}
-	if len(parts) == 0 {
+	if after != "" && before != "" && afterZone != beforeZone {
 		return "", false
+	}
+
+	zone := afterZone
+	if after == "" {
+		zone = beforeZone
+	}
+	date := "trigger.date"
+	if zone != "" {
+		date = fmt.Sprintf("trigger.date | date(timeZone='%s')", zone)
+	}
+
+	var parts []string
+	if after != "" {
+		parts = append(parts, fmt.Sprintf("hourOfDay(%s) >= %d", date, afterHour))
+	}
+	if before != "" {
+		parts = append(parts, fmt.Sprintf("hourOfDay(%s) < %d", date, beforeHour))
+	}
+	switch {
+	case len(parts) == 0:
+		return "", false
+	case len(parts) == 2 && afterHour >= beforeHour:
+		return strings.Join(parts, " or "), true
 	}
 	return strings.Join(parts, " and "), true
 }
 
 // parseWholeHour extracts a 0..23 hour from "HH", "HH:MM", or "HH:MM:SS",
-// tolerating an optional timezone suffix ("+02:00", "-05:00", "Z"). Returns
-// ok=false if the minute or second component is non-zero, since the
-// hour-only comparison in v2 can't represent sub-hour boundaries without
-// loss.
-func parseWholeHour(s string) (int, bool) {
+// along with its timezone suffix ("+02:00", "-05:00", "Z"; "" when absent), with
+// every UTC spelling normalised to "Z". Returns ok=false if the minute or second
+// component is non-zero, since the hour-only comparison in v2 can't represent
+// sub-hour boundaries without loss.
+func parseWholeHour(s string) (int, string, bool) {
 	s = strings.TrimSpace(s)
-	for _, suf := range []string{"Z"} {
-		s = strings.TrimSuffix(s, suf)
-	}
-	// Strip trailing ±HH:MM / ±HHMM timezone offset, if any.
-	if i := strings.LastIndexAny(s, "+-"); i > 0 {
-		s = s[:i]
+	zone := ""
+	if strings.HasSuffix(s, "Z") {
+		s, zone = strings.TrimSuffix(s, "Z"), "Z"
+	} else if i := strings.LastIndexAny(s, "+-"); i > 0 {
+		s, zone = s[:i], s[i:]
+		if strings.Trim(zone[1:], "0:") == "" {
+			zone = "Z"
+		}
 	}
 	parts := strings.Split(s, ":")
 	if len(parts) < 1 || len(parts) > 3 {
-		return 0, false
+		return 0, "", false
 	}
 	h, err := strconv.Atoi(parts[0])
 	if err != nil || h < 0 || h > 23 {
-		return 0, false
+		return 0, "", false
 	}
 	for _, p := range parts[1:] {
 		n, err := strconv.Atoi(p)
 		if err != nil || n != 0 {
-			return 0, false
+			return 0, "", false
 		}
 	}
-	return h, true
+	return h, zone, true
 }
 
 func convertHasRetryAttemptCondition(_ *yaml.Node) (string, bool) {
