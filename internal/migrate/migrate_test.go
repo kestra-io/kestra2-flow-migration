@@ -689,6 +689,36 @@ triggers:
 	}
 }
 
+// `date: "{{ trigger.date }}"` is v1's documented default and the shape its own examples use, so
+// it must convert exactly like an absent `date` rather than being treated as a custom instant.
+func TestApply_RewriteScheduleConditions_DateTimeBetween_DefaultDateIsConverted(t *testing.T) {
+	for _, date := range []string{"{{ trigger.date }}", "{{trigger.date}}", "  {{   trigger.date  }} "} {
+		in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DateTimeBetween
+        date: "` + date + `"
+        after: "2025-12-31T23:59:59Z"
+`
+		out, warnings := applyWithWarnings(t, in)
+		want := `when: "{{ (trigger.date | timestamp()) > ('2025-12-31T23:59:59Z' | timestamp()) }}"`
+		if !strings.Contains(out, want) {
+			t.Errorf("date %q: expected %s, got:\n%s", date, want, out)
+		}
+		if strings.Contains(out, "conditions:") {
+			t.Errorf("date %q: `conditions:` should have been replaced, got:\n%s", date, out)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("date %q: expected no warnings, got %v", date, warnings)
+		}
+	}
+}
+
 // `date` points the comparison at something other than the trigger date, and the rewrite has
 // nowhere to put it. It has to stay a warning: an expression that evaluates cleanly against the
 // wrong instant is worse than the loud failure it replaces.

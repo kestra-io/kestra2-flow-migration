@@ -1593,11 +1593,13 @@ func convertDateTimeBetweenCondition(c *yaml.Node) (string, bool) {
 	after := stringValue(c, "after")
 	before := stringValue(c, "before")
 
-	// `date` makes the condition compare against something other than the trigger
-	// date, and the rewrite has nowhere to put it. Leaving it to the warning keeps
-	// the loud failure it already had, rather than emitting an expression that
-	// evaluates cleanly against the wrong instant.
-	if stringValue(c, "date") != "" {
+	// A custom `date` makes the condition compare against something other than the
+	// trigger date, and the rewrite has nowhere to put it. Leaving it to the warning
+	// keeps the loud failure it already had, rather than emitting an expression that
+	// evaluates cleanly against the wrong instant. `{{ trigger.date }}` is v1's
+	// documented default (and what its own examples spell out), so it is the same
+	// instant the rewrite compares and needs no special handling.
+	if date := stringValue(c, "date"); date != "" && !isTriggerDateExpression(date) {
 		return "", false
 	}
 
@@ -1616,6 +1618,16 @@ func convertDateTimeBetweenCondition(c *yaml.Node) (string, bool) {
 		return "", false
 	}
 	return strings.Join(parts, " and "), true
+}
+
+// isTriggerDateExpression reports whether s is exactly `{{ trigger.date }}`,
+// ignoring whitespace inside and around the braces.
+func isTriggerDateExpression(s string) bool {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "{{") || !strings.HasSuffix(s, "}}") {
+		return false
+	}
+	return strings.TrimSpace(s[2:len(s)-2]) == "trigger.date"
 }
 
 // isTimeOfDayOnly reports whether a boundary is a time of day with no date part,
