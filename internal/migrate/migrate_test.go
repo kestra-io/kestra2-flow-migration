@@ -719,6 +719,54 @@ triggers:
 	}
 }
 
+// v1 rendered `after`/`before` as expressions. Quoting one as a literal nests `{{` inside the
+// `when`, which Pebble cannot parse — the trigger then fails on every scheduled date — so a
+// boundary that is a single expression is inlined.
+func TestApply_RewriteScheduleConditions_DateTimeBetween_TemplatedBoundaryIsInlined(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DateTimeBetween
+        after: "{{ now() | dateAdd(-1, 'DAYS') }}"
+        before: "2030-01-01T00:00:00Z"
+`
+	out, warnings := applyWithWarnings(t, in)
+	want := `when: "{{ (trigger.date | timestamp()) > ((now() | dateAdd(-1, 'DAYS')) | timestamp()) and (trigger.date | timestamp()) < ('2030-01-01T00:00:00Z' | timestamp()) }}"`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing expected `when:` expression, got:\n%s", out)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got: %v", warnings)
+	}
+}
+
+// A template mixed with literal text has no clean inline form: leave it as a warning.
+func TestApply_RewriteScheduleConditions_DateTimeBetween_PartialTemplate_WarnsInstead(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DateTimeBetween
+        after: "2025-{{ vars.month }}-01T00:00:00Z"
+`
+	out, warnings := applyWithWarnings(t, in)
+	if strings.Contains(out, "when:") || !strings.Contains(out, "conditions:") {
+		t.Errorf("a partially templated boundary must be left for manual rewrite, got:\n%s", out)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected a trigger.conditions warning")
+	}
+}
+
 // `date` points the comparison at something other than the trigger date, and the rewrite has
 // nowhere to put it. It has to stay a warning: an expression that evaluates cleanly against the
 // wrong instant is worse than the loud failure it replaces.
@@ -925,7 +973,8 @@ triggers:
 }
 
 // TimeBetween with whole-hour boundaries and a timezone suffix maps onto
-// hourOfDay() comparisons.
+// hourOfDay() comparisons, read in the boundaries' offset: v1 compared instants,
+// and trigger.date is in the Schedule's own timezone.
 func TestApply_RewriteScheduleConditions_TimeBetweenWholeHours(t *testing.T) {
 	in := `
 id: test-flow
@@ -940,12 +989,85 @@ triggers:
         before: "17:00:00+02:00"
 `
 	out, warnings := applyWithWarnings(t, in)
-	want := `when: "{{ hourOfDay(trigger.date) >= 8 and hourOfDay(trigger.date) < 17 }}"`
+	want := `when: "{{ hourOfDay(trigger.date | date(timeZone='+02:00')) >= 8 and hourOfDay(trigger.date | date(timeZone='+02:00')) < 17 }}"`
 	if !strings.Contains(out, want) {
 		t.Errorf("missing expected `when:` expression, got:\n%s", out)
 	}
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings, got: %v", warnings)
+	}
+}
+
+func timeBetweenFlow(extra string) string {
+	return `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "@hourly"
+    timezone: Europe/Paris
+    conditions:
+      - type: io.kestra.plugin.core.condition.TimeBetween
+` + extra
+}
+
+// Every spelling of UTC is one zone, so "Z" and "+00:00" boundaries pair up, and
+// the hour is still read in UTC rather than in the Schedule's Europe/Paris.
+func TestApply_RewriteScheduleConditions_TimeBetweenUTCSpellings(t *testing.T) {
+	out, warnings := applyWithWarnings(t, timeBetweenFlow(`        after: "09:00:00Z"
+        before: "17:00:00+00:00"
+`))
+	want := `when: "{{ hourOfDay(trigger.date | date(timeZone='Z')) >= 9 and hourOfDay(trigger.date | date(timeZone='Z')) < 17 }}"`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing expected `when:` expression, got:\n%s", out)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got: %v", warnings)
+	}
+}
+
+// v1 read `after` >= `before` as a window wrapping past midnight (after OR before).
+// Joining the halves with `and` gives an expression that is never true, so the
+// migrated trigger would silently never fire.
+func TestApply_RewriteScheduleConditions_TimeBetweenWrapsPastMidnight(t *testing.T) {
+	out, warnings := applyWithWarnings(t, timeBetweenFlow(`        after: "22:00:00Z"
+        before: "06:00:00Z"
+`))
+	want := `when: "{{ hourOfDay(trigger.date | date(timeZone='Z')) >= 22 or hourOfDay(trigger.date | date(timeZone='Z')) < 6 }}"`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing expected `when:` expression, got:\n%s", out)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got: %v", warnings)
+	}
+}
+
+// Boundaries in two different offsets no longer describe one local-hour window;
+// leave them for a manual rewrite rather than guess.
+func TestApply_RewriteScheduleConditions_TimeBetweenMixedOffsets_WarnsInstead(t *testing.T) {
+	out, warnings := applyWithWarnings(t, timeBetweenFlow(`        after: "08:00:00+02:00"
+        before: "17:00:00Z"
+`))
+	if strings.Contains(out, "when:") || !strings.Contains(out, "conditions:") {
+		t.Errorf("mixed-offset TimeBetween must be left for manual rewrite, got:\n%s", out)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected a trigger.conditions warning")
+	}
+}
+
+// A custom `date` points TimeBetween at another instant, which hourOfDay(trigger.date)
+// would silently ignore — same rule as DateTimeBetween.
+func TestApply_RewriteScheduleConditions_TimeBetweenCustomDate_WarnsInstead(t *testing.T) {
+	out, warnings := applyWithWarnings(t, timeBetweenFlow(`        date: "{{ execution.startDate }}"
+        after: "08:00:00Z"
+`))
+	if strings.Contains(out, "when:") || !strings.Contains(out, "conditions:") {
+		t.Errorf("TimeBetween with a custom date must be left for manual rewrite, got:\n%s", out)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected a trigger.conditions warning")
 	}
 }
 

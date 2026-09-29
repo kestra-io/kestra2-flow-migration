@@ -10,7 +10,7 @@ triggers:
   - id: schedule
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "@hourly"
-    when: "{{ hourOfDay(trigger.date) >= 8 and hourOfDay(trigger.date) < 17 }}"
+    when: "{{ hourOfDay(trigger.date | date(timeZone='+02:00')) >= 8 and hourOfDay(trigger.date | date(timeZone='+02:00')) < 17 }}"
 
 # extend:
 #   shortDescription: "This flow gets triggered on an hourly basis with the schedule condition that the time falls between 8am and 5pm of +02:00 timezone using the TimeBetween."
