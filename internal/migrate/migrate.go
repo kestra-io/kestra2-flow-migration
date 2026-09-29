@@ -400,11 +400,12 @@ func marshalYAML(doc *yaml.Node) ([]byte, error) {
 // ── Rules ────────────────────────────────────────────────────────────────────
 
 // inputDefinitions calls fn on every input definition in the flow: the
-// top-level `inputs:`, each `onResume:` list (Pause and WaitFor declare their
-// own), and the children of a FORM input in either place. The input rules
-// below all go through it so that none of them handles only the root: a nested
-// definition left in v1 shape is rejected on save just like a top-level one,
-// and the flow would still be reported as v2-compatible.
+// top-level `inputs:`, each `onResume:` list (Pause declares its own; WaitFor
+// is only an alias of LoopUntil and has none), and the children of a FORM
+// input in either place. The input rules below all go through it so that none
+// of them handles only the root: a nested definition left in v1 shape is
+// rejected on save just like a top-level one, and the flow would still be
+// reported as v2-compatible.
 //
 // Scoped to those three places on purpose. A Subflow's or trigger's `inputs`
 // is a mapping of name to value, and an asset's `inputs` is a list of asset
