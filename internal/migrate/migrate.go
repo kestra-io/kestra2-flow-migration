@@ -102,6 +102,7 @@ const (
 	// Queue carrying the tag — an advisory, not a save-blocker.
 	CodeWorkerGroupConverted Code = "worker-group-converted"
 	CodeTriggerConditions    Code = "trigger-conditions"
+	CodeIonRead              Code = "ion-read"
 )
 
 // codeLabels are the short human labels the grouped summary prints. They are
@@ -118,6 +119,7 @@ var codeLabels = map[Code]string{
 	CodeWorkerGroup:          "`workerGroup` cannot be mapped to `workerSelector`",
 	CodeWorkerGroupConverted: "`workerGroup` converted, needs a Worker Queue tag",
 	CodeTriggerConditions:    "trigger conditions could not be rewritten",
+	CodeIonRead:              "`read()` on a binary ION output needs `fromIon()`",
 }
 
 // Label returns the short human label for a family, falling back to the raw
@@ -141,6 +143,7 @@ const (
 	docTriggerConditions = DocMigrationGuide + "/trigger-conditions-redesign"
 	docSDKAuth           = DocMigrationGuide + "/sdk-authentication"
 	docPluginDefaults    = DocMigrationGuide + "/plugin-defaults-removed"
+	docIonBinaryFormat   = DocMigrationGuide + "/ion-binary-format"
 	docWorkerGroup       = "https://kestra.io/docs/enterprise/scalability/worker-group#migrating-from-earlier-versions"
 )
 
@@ -229,6 +232,10 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// read()/fileURI() `version=` → `revision=` is a v2 hard break the tool
 		// cannot rewrite safely (expressions may be embedded in script bodies).
 		warnings = append(warnings, advisory(detectPebbleVersionArg(&doc), DocMigrationGuide, CodePebbleVersionArg)...)
+		// ION outputs are binary on 2.0: read() on one returns bytes. The flow
+		// saves and misbehaves at run time, and the fromIon() fix changes the
+		// expression's type, so this is an advisory, not a rewrite.
+		warnings = append(warnings, advisory(detectIonRead(&doc), docIonBinaryFormat, CodeIonRead)...)
 		// Tasks needing Kestra API credentials on v2. Mixed severity: mandatory
 		// `auth` blocks the save, an optional one only 401s at run time, so the
 		// detector tags each warning itself.

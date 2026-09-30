@@ -59,6 +59,7 @@ internal/
   input/             File and directory resolution
   migrate/           Migration rules (v1 → v2 transformations)
     migrate.go       Rule implementations + helpers
+    ion_read.go      Detector: read() on a binary ION output without fromIon()
     migrate_test.go  Unit tests (~190 tests)
   output/            Write to dir or stdout
   update/            "a newer release exists" check (advisory, cached, fail-silent)
@@ -188,6 +189,8 @@ The split is a property of the shipped plugin class hierarchy (`plugin-git 4.0.0
 Three type strings that look plausible **do not exist in 2.0.0** and must not be matched: `git.SyncDashboards` and `git.PushDashboards` (dashboard sync is EE-only, under `ee.git.*`; no `@Plugin(aliases = ...)` bridges them) and `ai.KestraFlow` (the real class is `ai.tool.KestraFlow`, a nested tool inside an agent's `tools:` list — `walkMappings` reaches it anyway). `SyncNamespaceFiles` stays in `sdkAuthConditional`, advisory, flagged only when `includeChildNamespaces` is true or templated. `git.Push` is excluded — it already reports as a removed type. Note `renameTypes` moves `core.log.Fetch` → `kestra.logs.Fetch`, i.e. into the advisory prefix.
 
 When adding a type here, decide the bucket from the plugin source (`@NotNull` on `auth`?), not from whether it calls the API — and prefer a live `flows validate` probe to confirm.
+
+`detectIonRead()` (`ion_read.go`) flags Pebble `read(outputs.<id>…)` calls not wrapped in `fromIon(` when `<id>` writes ION (`*ToIon`, `FileTransform`, `fetchType: STORE` / `store: true`, `Write`/`Concat` with `.ion`): ION outputs are binary on 2.0, so `read()` returns bytes. Advisory (the flow saves), gated to the v2 path; not rewritten because `fromIon()` changes the expression's type.
 
 `detectPebbleVersionArg()` flags Pebble `read()`/`fileURI()` calls using the removed `version=` named argument (renamed to `revision` in v2 with **no fallback**, kestra PR #16699 / rc3). Warning-only — rewriting inside arbitrary expressions could corrupt embedded script code. Gated to the v2 path.
 
