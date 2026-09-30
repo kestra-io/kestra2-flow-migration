@@ -1,0 +1,9 @@
+# kestra-ee#11390: Echo → Log must also rename `format` → `message`
+id: echo_to_log
+namespace: migration.flows
+
+tasks:
+  - id: echo
+    type: io.kestra.plugin.core.debug.Echo
+    level: WARN
+    format: "Hello from Echo in {{ flow.namespace }}"
