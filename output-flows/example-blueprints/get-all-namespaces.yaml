@@ -14,17 +14,17 @@ tasks:
 
   - id: get_all_namespaces
     type: io.kestra.plugin.core.http.Request
-    uri: "{{ vars.kestra_local_uri }}/api/v1/namespaces/search?size={{ json(outputs.get_nr_of_namespaces['body']).total }}"
+    uri: "{{ vars.kestra_local_uri }}/api/v1/namespaces/search?size={{ fromJson(outputs.get_nr_of_namespaces['body']).total }}"
 
 outputs:
   - id: namespaces
     type: ARRAY
     value: |
-      [{% for elem in json(outputs.get_all_namespaces["body"]).results %}"{{ elem.id }}"{% if not loop.last %},{% endif %}{% endfor %}]
+      [{% for elem in fromJson(outputs.get_all_namespaces["body"]).results %}"{{ elem.id }}"{% if not loop.last %},{% endif %}{% endfor %}]
 
   - id: total
     type: INT
-    value: "{{ json(outputs.get_nr_of_namespaces['body']).total }}"
+    value: "{{ fromJson(outputs.get_nr_of_namespaces['body']).total }}"
 
 pluginDefaults:
   - type: io.kestra.plugin.core.http.Request

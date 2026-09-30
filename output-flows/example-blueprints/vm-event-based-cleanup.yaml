@@ -12,7 +12,7 @@ tasks:
     tasks:
       - id: log_vm_event
         type: io.kestra.plugin.core.log.Log
-        message: "VM {{ json(taskrun.value).vmName }} had event {{ json(taskrun.value).eventType }} at {{ json(taskrun.value).timestamp }}"
+        message: "VM {{ fromJson(taskrun.value).vmName }} had event {{ fromJson(taskrun.value).eventType }} at {{ fromJson(taskrun.value).timestamp }}"
 
       - id: trigger_cleanup
         type: io.kestra.plugin.core.flow.Sequential
@@ -22,7 +22,7 @@ tasks:
             inputFiles:
               main.ps1: |
                 # Remove DNS A record from AD by VM name
-                Remove-DnsServerResourceRecord -ZoneName "yourdomain.com" -RRType "A" -Name "{{ json(taskrun.value).vmName }}" -Force
+                Remove-DnsServerResourceRecord -ZoneName "yourdomain.com" -RRType "A" -Name "{{ fromJson(taskrun.value).vmName }}" -Force
             commands:
               - ./main.ps1
 
@@ -31,8 +31,8 @@ tasks:
             inputFiles:
               main.ps1: |
                 # Remove the computer object from Active Directory
-                Remove-ADComputer -Identity "{{ json(taskrun.value).vmName }}" -Confirm:$false -ErrorAction Stop
-                Write-Output "Deleted AD computer object for VM {{ json(taskrun.value).vmName }}"
+                Remove-ADComputer -Identity "{{ fromJson(taskrun.value).vmName }}" -Confirm:$false -ErrorAction Stop
+                Write-Output "Deleted AD computer object for VM {{ fromJson(taskrun.value).vmName }}"
             commands:
               - ./main.ps1
 
@@ -46,7 +46,7 @@ tasks:
             body: |
               {
                 "action_name": "hide_host",
-                "ids": ["{{ json(taskrun.value).vmName }}"]
+                "ids": ["{{ fromJson(taskrun.value).vmName }}"]
               }
 
 triggers:

@@ -68,7 +68,7 @@ tasks:
                 tasks:
                   - id: retrieve_values
                     type: io.kestra.plugin.core.http.Request
-                    uri: "{{ vars.kestra_local_uri }}/api/v1/namespaces/{{ parents[0].taskrun.value }}/kv/{{ json(taskrun.value).key }}"
+                    uri: "{{ vars.kestra_local_uri }}/api/v1/namespaces/{{ parents[0].taskrun.value }}/kv/{{ fromJson(taskrun.value).key }}"
           - id: pushes
             type: io.kestra.plugin.core.flow.Sequential
             tasks:
@@ -96,7 +96,7 @@ tasks:
     type: io.kestra.plugin.core.flow.WorkingDirectory
     inputFiles:
       kvStore.json: |
-        {% for elem in outputs.retrieve_values %}{"namespace":"{{ elem.key }}","keys":[{% for ele in (elem.value) %}{"key":"{{ json(ele.key).key }}","body":{{ ele.value.body }}}{% if not loop.last %},{% endif %}{% endfor %}]}
+        {% for elem in outputs.retrieve_values %}{"namespace":"{{ elem.key }}","keys":[{% for ele in (elem.value) %}{"key":"{{ fromJson(ele.key).key }}","body":{{ ele.value.body }}}{% if not loop.last %},{% endif %}{% endfor %}]}
         {% endfor %}
     tasks:
       - id: storeKv

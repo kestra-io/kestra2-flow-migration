@@ -11,8 +11,8 @@ tasks:
         taskRunner:
           type: io.kestra.plugin.core.runner.Process
         commands:
-          - echo "{{ json(taskrun.value) }}"
-          - echo "Welcome to Kestra {{ json(taskrun.value).FIRST_NAME }} {{ json(taskrun.value).LAST_NAME }}"
+          - echo "{{ fromJson(taskrun.value) }}"
+          - echo "Welcome to Kestra {{ fromJson(taskrun.value).FIRST_NAME }} {{ fromJson(taskrun.value).LAST_NAME }}"
 
   - id: update
     type: io.kestra.plugin.jdbc.snowflake.Query

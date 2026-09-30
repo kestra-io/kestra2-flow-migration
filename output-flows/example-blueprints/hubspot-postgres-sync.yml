@@ -8,11 +8,11 @@ tasks:
       - id: create_contact_in_hubspot
         type: io.kestra.plugin.hubspot.contacts.Create
         apiKey: "{{ secret('HUBSPOT_API_KEY') }}"
-        email: "{{ json(taskrun.value).Email }}"
-        firstName: "{{ json(taskrun.value).FirstName }}"
-        lastName: "{{ json(taskrun.value).LastName }}"
-        phone: "{{ json(taskrun.value).Phone }}"
-        jobTitle: "{{ json(taskrun.value).JobTitle }}"
+        email: "{{ fromJson(taskrun.value).Email }}"
+        firstName: "{{ fromJson(taskrun.value).FirstName }}"
+        lastName: "{{ fromJson(taskrun.value).LastName }}"
+        phone: "{{ fromJson(taskrun.value).Phone }}"
+        jobTitle: "{{ fromJson(taskrun.value).JobTitle }}"
 
 triggers:
   - id: postgres_trigger

@@ -24,6 +24,7 @@ var rules = []rule{
 	removeDeprecatedProperties,
 	renameExitCanceled,
 	renameCanceledStates,
+	renamePebbleJSON,
 	renameMultiselectOptions,
 	migrateHTTPBasicAuth,
 	removeDeprecatedHTTPOptions,

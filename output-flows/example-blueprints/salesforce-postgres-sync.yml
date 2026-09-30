@@ -13,10 +13,10 @@ tasks:
           password: "{{ secret('SALESFORCE_PASSWORD') }}"
           authEndpoint: "{{ secret('SALESFORCE_AUTH_ENDPOINT') }}"
         objectName: "Contact"
-        records: 
-          - FirstName: "{{ json(taskrun.value).FirstName }}"
-            LastName: "{{ json(taskrun.value).LastName }}"
-            Email: "{{ json(taskrun.value).Email }}"
+        records:
+          - FirstName: "{{ fromJson(taskrun.value).FirstName }}"
+            LastName: "{{ fromJson(taskrun.value).LastName }}"
+            Email: "{{ fromJson(taskrun.value).Email }}"
 
 triggers:
   - id: postgres_trigger
