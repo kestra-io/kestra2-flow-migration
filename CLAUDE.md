@@ -61,6 +61,7 @@ internal/
     migrate.go       Rule implementations + helpers
     ion_read.go      Detector: read() on a binary ION output without fromIon()
     pebble.go        Pebble-expression rewrites (json filter/function rename)
+    script_runner.go Legacy script `runner` / `docker` → `taskRunner` rewrite
     migrate_test.go  Unit tests (~190 tests)
   output/            Write to dir or stdout
   update/            "a newer release exists" check (advisory, cached, fail-silent)
@@ -160,6 +161,7 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `removeDeprecatedHTTPOptions` | Removes `options.connectionPoolIdleTimeout` from any task |
 | `setLocalDeleteRecursive` | `io.kestra.plugin.fs.local.Delete`: adds `recursive: true` when absent (v2 default flipped to `false`); preserves v1 behavior, no-op on file targets |
 | `renameChecksCondition` | Top-level `checks[]`: `condition` → `when` (scoped to `checks` only). **Not** in the `rules` slice — called as a gated post-step in `Apply()`, skipped under `--stay-v1-compatible` (v2-only construct) |
+| `migrateLegacyScriptRunner` | `io.kestra.plugin.scripts.*` tasks: `runner: PROCESS` → `taskRunner: {type: …core.runner.Process}`; `runner: DOCKER` / lone `docker:` → Docker `taskRunner` carrying the other `docker` options, `docker.image` → `containerImage`; `outputDirectory: true` when the task uses `{{ outputDir }}` (the legacy runner enabled it by default). Mirrors v1.3 `CommandsWrapper.getTaskRunner()` precedence. Lives in `script_runner.go` |
 | `removeRequiredFalseWithDefaults` | Inputs: removes `required: false` when `defaults` is present (v2 requires inputs with defaults to be required) |
 | `renameReservedFlowIDs` | Appends `-flow` to flow IDs that clash with v2 reserved keywords (`pause`, `resume`, `search`, etc.) |
 | `migrateDbtBuildToDbtCLI` | Renames `io.kestra.plugin.dbt.cli.Build` → `io.kestra.plugin.dbt.cli.DbtCLI`, adds `commands: [dbt build]` when not already set (the old `Build` task ran `dbt build` implicitly), drops `dbtPath` (not a DbtCLI property), and promotes `dockerOptions.image` → `containerImage`. |
@@ -236,7 +238,6 @@ Idempotent by construction: a disabled flow has no live incompatible construct l
 ### Not yet automated (require manual migration)
 
 - **Listeners** → must be rewritten as separate flows with `Flow` triggers
-- **`runner` → `taskRunner`** with `docker.image` → `containerImage` restructuring
 - **Recursive Pebble rendering** → wrap with `{{ render(...) }}`
 - **`LocalFiles`/`outputDir`** → `inputFiles`/`outputFiles` on `WorkingDirectory` (type rename is automated, property restructuring is not)
 - **Script task type renames** (`io.kestra.core.tasks.scripts.*` → `io.kestra.plugin.scripts.<lang>.*`)

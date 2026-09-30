@@ -1,0 +1,18 @@
+# kestra-ee#11384: legacy `runner` / `docker` → `taskRunner` + `containerImage`
+id: script_runner
+namespace: company.team
+
+tasks:
+  - id: process_runner
+    type: io.kestra.plugin.scripts.shell.Commands
+    runner: PROCESS
+    commands:
+      - echo hello
+
+  - id: docker_runner
+    type: io.kestra.plugin.scripts.shell.Commands
+    runner: DOCKER
+    docker:
+      image: ubuntu:24.04
+    commands:
+      - echo hello
