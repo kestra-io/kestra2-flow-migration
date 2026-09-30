@@ -1,0 +1,22 @@
+# kestra-ee#11388: state.* → kv.* needs its properties and Get outputs rewritten too
+id: state_roundtrip
+namespace: company.team
+tasks:
+  - id: set
+    type: io.kestra.plugin.core.kv.Set
+    key: state-roundtrip_states_tasks-states_demo
+    value:
+      label: hello
+      count: 1
+  - id: get
+    type: io.kestra.plugin.core.kv.Get
+    key: state-roundtrip_states_tasks-states_demo
+  - id: get_missing
+    type: io.kestra.plugin.core.kv.Get
+    key: state-roundtrip_states_tasks-states_never_set
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "label={{ fromJson((outputs.get.value ?? '{}') contains '{' ? (outputs.get.value ?? '{}') : (outputs.get.value | base64decode)).label }} count={{ (fromJson((outputs.get.value ?? '{}') contains '{' ? (outputs.get.value ?? '{}') : (outputs.get.value | base64decode)) | length) }} missing={{ fromJson((outputs.get_missing.value ?? '{}') contains '{' ? (outputs.get_missing.value ?? '{}') : (outputs.get_missing.value | base64decode)) }}/{{ (fromJson((outputs.get_missing.value ?? '{}') contains '{' ? (outputs.get_missing.value ?? '{}') : (outputs.get_missing.value | base64decode)) | length) }}"
+  - id: delete
+    type: io.kestra.plugin.core.kv.Delete
+    key: state-roundtrip_states_tasks-states_demo
