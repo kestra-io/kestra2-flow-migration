@@ -1,0 +1,20 @@
+# kestra-ee#11385: read() on an ION output without fromIon() is flagged (advisory)
+id: ion_read
+namespace: company.team
+
+tasks:
+  - id: csv
+    type: io.kestra.plugin.core.storage.Write
+    extension: .csv
+    content: |
+      name
+      jane
+
+  - id: to_ion
+    type: io.kestra.plugin.serdes.csv.CsvToIon
+    from: "{{ outputs.csv.uri }}"
+
+  - id: assert
+    type: io.kestra.plugin.core.execution.Assert
+    conditions:
+      - "{{ read(outputs.to_ion.uri) contains 'jane' }}"
