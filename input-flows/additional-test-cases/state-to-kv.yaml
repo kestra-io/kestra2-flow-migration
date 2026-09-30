@@ -1,0 +1,22 @@
+# kestra-ee#11388: state.* → kv.* needs its properties and Get outputs rewritten too
+id: state_roundtrip
+namespace: company.team
+tasks:
+  - id: set
+    type: io.kestra.plugin.core.state.Set
+    name: demo
+    data:
+      label: hello
+      count: 1
+  - id: get
+    type: io.kestra.plugin.core.state.Get
+    name: demo
+  - id: get_missing
+    type: io.kestra.plugin.core.state.Get
+    name: never_set
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "label={{ outputs.get.data.label }} count={{ outputs.get.count }} missing={{ outputs.get_missing.data }}/{{ outputs.get_missing.count }}"
+  - id: delete
+    type: io.kestra.plugin.core.state.Delete
+    name: demo

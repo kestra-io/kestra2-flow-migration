@@ -62,6 +62,7 @@ internal/
     ion_read.go      Detector: read() on a binary ION output without fromIon()
     pebble.go        Pebble-expression rewrites (json filter/function rename)
     script_runner.go Legacy script `runner` / `docker` → `taskRunner` rewrite
+    state_kv.go      State Store tasks → kv.* properties and outputs
     migrate_test.go  Unit tests (~190 tests)
   output/            Write to dir or stdout
   update/            "a newer release exists" check (advisory, cached, fail-silent)
@@ -162,6 +163,7 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `setLocalDeleteRecursive` | `io.kestra.plugin.fs.local.Delete`: adds `recursive: true` when absent (v2 default flipped to `false`); preserves v1 behavior, no-op on file targets |
 | `renameChecksCondition` | Top-level `checks[]`: `condition` → `when` (scoped to `checks` only). **Not** in the `rules` slice — called as a gated post-step in `Apply()`, skipped under `--stay-v1-compatible` (v2-only construct) |
 | `migrateLegacyScriptRunner` | `io.kestra.plugin.scripts.*` tasks: `runner: PROCESS` → `taskRunner: {type: …core.runner.Process}`; `runner: DOCKER` / lone `docker:` → Docker `taskRunner` carrying the other `docker` options, `docker.image` → `containerImage`; `outputDirectory: true` when the task uses `{{ outputDir }}` (the legacy runner enabled it by default). Mirrors v1.3 `CommandsWrapper.getTaskRunner()` precedence. Lives in `script_runner.go` |
+| `migrateStateToKV` | State Store tasks: `name` → `key` (the v1.3 State Store KV key `<flow-slug>_states_tasks-states_<name>`, so existing state is still read), `data` → `value`, drops `namespace`/`taskrunValue`; rewrites `outputs.<get>.data`/`.count` to a `fromJson(…)` that reads both the base64 form a v1.3-written value comes back in and plain JSON; advisory per Set (merge → overwrite). **Not** in the `rules` slice — runs in `Apply()` before them (keys off the state types and the v1 flow id), on both paths. Lives in `state_kv.go` |
 | `removeRequiredFalseWithDefaults` | Inputs: removes `required: false` when `defaults` is present (v2 requires inputs with defaults to be required) |
 | `renameReservedFlowIDs` | Appends `-flow` to flow IDs that clash with v2 reserved keywords (`pause`, `resume`, `search`, etc.) |
 | `migrateDbtBuildToDbtCLI` | Renames `io.kestra.plugin.dbt.cli.Build` → `io.kestra.plugin.dbt.cli.DbtCLI`, adds `commands: [dbt build]` when not already set (the old `Build` task ran `dbt build` implicitly), drops `dbtPath` (not a DbtCLI property), and promotes `dockerOptions.image` → `containerImage`. |

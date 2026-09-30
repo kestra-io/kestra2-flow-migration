@@ -105,6 +105,7 @@ const (
 	CodeWorkerGroupConverted Code = "worker-group-converted"
 	CodeTriggerConditions    Code = "trigger-conditions"
 	CodeIonRead              Code = "ion-read"
+	CodeStateMerge           Code = "state-merge"
 )
 
 // codeLabels are the short human labels the grouped summary prints. They are
@@ -122,6 +123,7 @@ var codeLabels = map[Code]string{
 	CodeWorkerGroupConverted: "`workerGroup` converted, needs a Worker Queue tag",
 	CodeTriggerConditions:    "trigger conditions could not be rewritten",
 	CodeIonRead:              "`read()` on a binary ION output needs `fromIon()`",
+	CodeStateMerge:           "state.Set merged its data, kv.Set replaces it",
 }
 
 // Label returns the short human label for a family, falling back to the raw
@@ -198,6 +200,11 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		return nil, nil, err
 	}
 
+	// State Store → KV properties. Before the rules: it keys off the state.*
+	// types renameTypes rewrites, and off the v1 flow id renameReservedFlowIDs
+	// may change. Valid on v1.3 too, so it runs on both paths.
+	stateWarnings := migrateStateToKV(&doc)
+
 	for _, r := range rules {
 		if err := r(&doc); err != nil {
 			return nil, nil, err
@@ -259,6 +266,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 			return nil, nil, err
 		}
 	}
+	warnings = append(warnings, stateWarnings...)
 	// Detect removed types after all rename/rewrite rules have run.
 	warnings = append(warnings, detectRemovedTypes(&doc)...)
 
