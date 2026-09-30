@@ -28,7 +28,7 @@ tasks:
   - id: for_each_flows_folder
     type: io.kestra.plugin.core.flow.ForEach
     values: |
-      [{% for elem in json(outputs.get_flows_targets['body']) %}"{{ elem.name }}"{% if not loop.last %},{% endif %}{% endfor %}]
+      [{% for elem in fromJson(outputs.get_flows_targets['body']) %}"{{ elem.name }}"{% if not loop.last %},{% endif %}{% endfor %}]
     tasks:
       - id: pull_flows
         type: io.kestra.plugin.git.SyncFlows
@@ -48,7 +48,7 @@ tasks:
   - id: for_each_files_folder
     type: io.kestra.plugin.core.flow.ForEach
     values: |
-      [{% for elem in json(outputs.git_target['body']) %}"{{ elem.name }}"{% if not loop.last %},{% endif %}{% endfor %}]
+      [{% for elem in fromJson(outputs.git_target['body']) %}"{{ elem.name }}"{% if not loop.last %},{% endif %}{% endfor %}]
     tasks:
       - id: pull_files
         type: io.kestra.plugin.git.SyncNamespaceFiles
@@ -67,21 +67,21 @@ tasks:
 
   - id: for_each_namespace_store
     type: io.kestra.plugin.core.flow.ForEach
-    values: "{{ json(outputs.fetch_kv['body']).content | base64decode | split('\n') }}"
+    values: "{{ fromJson(outputs.fetch_kv['body']).content | base64decode | split('\n') }}"
     tasks:
       - id: for_each_key
         type: io.kestra.plugin.core.flow.ForEach
-        values: "{{ json(taskrun.value).keys }}"
+        values: "{{ fromJson(taskrun.value).keys }}"
         tasks:
           - id: put_key
             type: io.kestra.plugin.core.http.Request
             method: PUT
             contentType: application/json
-            uri: "{{ kv('kestra_local_uri') }}/api/v1/namespaces/{{ json(parent.taskrun.value).namespace }}/kv/{{ json(taskrun.value).key }}"
+            uri: "{{ kv('kestra_local_uri') }}/api/v1/namespaces/{{ fromJson(parent.taskrun.value).namespace }}/kv/{{ fromJson(taskrun.value).key }}"
             headers:
               Authorization: "{{ secret('KESTRA_API_TOKEN') }}"
             body: |
-              {% if json(taskrun.value).body.type == "STRING" %}"{% endif %}{{ json(taskrun.value).body.value }}{% if json(taskrun.value).body.type == "STRING" %}"{% endif %}
+              {% if fromJson(taskrun.value).body.type == "STRING" %}"{% endif %}{{ fromJson(taskrun.value).body.value }}{% if fromJson(taskrun.value).body.type == "STRING" %}"{% endif %}
 
 # extend:
 #   shortDescription: "This blueprint demonstrates a GitOps-based backup and restore pattern for Kestra, enabling teams to synchronize workflows, namespace files, and key-value."

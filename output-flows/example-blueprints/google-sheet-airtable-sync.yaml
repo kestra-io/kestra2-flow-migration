@@ -4,12 +4,12 @@ description: >
   Syncs new or updated article pitch submissions from Google Sheets into Airtable
   for editorial review assignment, using the title, author, and URL captured in
   each row.
-  
+
 tasks:
   - id: log_sheet_changes
     type: io.kestra.plugin.core.log.Log
     # Quick format check to confirm the trigger payload shape.
-    message: "Detected Google Sheet modifications: {{ trigger.modifications | json }}"
+    message: "Detected Google Sheet modifications: {{ trigger.modifications | toJson }}"
 
   - id: create_airtable_record
     type: io.kestra.plugin.airtable.records.Create

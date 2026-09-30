@@ -15,7 +15,7 @@ tasks:
     type: io.kestra.plugin.huggingface.Inference
     model: facebook/bart-large-mnli
     apiKey: "{{ secret('HUGGINGFACE_API_KEY') }}"
-    inputs: "{{ json(outputs.retrieve_data.row).message }}"
+    inputs: "{{ fromJson(outputs.retrieve_data.row).message }}"
     parameters:
         candidate_labels:
           - "support"
@@ -25,7 +25,7 @@ tasks:
 
   - id: insert_category
     type: io.kestra.plugin.jdbc.postgresql.Query
-    sql: UPDATE customer.message SET category = '{{ json(outputs.classification.output).labels[0] }}' WHERE message_id = '{{ inputs.message_id }}' 
+    sql: UPDATE customer.message SET category = '{{ fromJson(outputs.classification.output).labels[0] }}' WHERE message_id = '{{ inputs.message_id }}'
 
 
 pluginDefaults:

@@ -1,0 +1,19 @@
+id: pebble-json-rename
+namespace: company.team
+tasks:
+  - id: fetch
+    type: io.kestra.plugin.core.http.Request
+    uri: https://dummyjson.com/products/1
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ fromJson(outputs.fetch.body).title }} / {{ outputs.fetch.headers | toJson }}"
+  - id: branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.fetch.body is json }}"
+    then:
+      - id: script
+        type: io.kestra.plugin.scripts.python.Script
+        script: |
+          import json
+          data = json.loads('{{ outputs.fetch.body | toJson }}')
+          print("{% raw %}{{ json(x) }}{% endraw %}", data["id"])

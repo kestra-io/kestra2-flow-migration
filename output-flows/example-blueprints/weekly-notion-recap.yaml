@@ -21,10 +21,10 @@ tasks:
   - id: for_each_issue
     type: io.kestra.plugin.core.flow.ForEach
     values: "{{ outputs.get_issues.body }}"
-    tasks: 
+    tasks:
       - id: get_individual_issues
         type: io.kestra.plugin.core.debug.Return
-        format: "{{ json(taskrun.value).url }} "
+        format: "{{ fromJson(taskrun.value).url }} "
       - id: set_issues
         type: io.kestra.plugin.core.kv.Set
         key: issues_today
@@ -44,10 +44,10 @@ tasks:
   - id: for_each
     type: io.kestra.plugin.core.flow.ForEach
     values: "{{ outputs.get_calendar_events['metadataList'] }}"
-    tasks: 
+    tasks:
       - id: get_individual_event
         type: io.kestra.plugin.core.debug.Return
-        format: "{{ json(taskrun.value).htmlLink }}"
+        format: "{{ fromJson(taskrun.value).htmlLink }}"
       - id: set_meetings
         type: io.kestra.plugin.core.kv.Set
         key: meetings_today

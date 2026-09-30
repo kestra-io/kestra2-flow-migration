@@ -26,7 +26,7 @@ tasks:
     tasks:
       - id: filename
         type: io.kestra.plugin.core.log.Log
-        message: "Filename {{ json(taskrun.value).key }} with size {{ json(taskrun.value).size }}"
+        message: "Filename {{ fromJson(taskrun.value).key }} with size {{ fromJson(taskrun.value).size }}"
 
 # extend:
 #   shortDescription: "This flow lists objects with a specific prefix in an S3 bucket and then processes each object in parallel."

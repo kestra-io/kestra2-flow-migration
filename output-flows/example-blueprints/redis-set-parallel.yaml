@@ -22,7 +22,7 @@ tasks:
         type: io.kestra.plugin.redis.string.Set
         url: redis://host.docker.internal:6379/0
         serdeType: STRING
-        key: "{{ json(taskrun.value) | keys | first }}"
+        key: "{{ fromJson(taskrun.value) | keys | first }}"
         value: |
           {{ taskrun.value | jq('.[]') | first }}
 

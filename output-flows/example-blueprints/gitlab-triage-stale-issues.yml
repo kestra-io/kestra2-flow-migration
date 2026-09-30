@@ -19,7 +19,7 @@ tasks:
     type: io.kestra.plugin.scripts.python.Script
     description: "Filter issues not updated in the last N days and build a triage summary"
     inputFiles:
-      issues.json: "{{ outputs.search_open_issues.issues | json }}"
+      issues.json: "{{ outputs.search_open_issues.issues | toJson }}"
     script: |
       import json, datetime, sys
 

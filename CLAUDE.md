@@ -60,6 +60,7 @@ internal/
   migrate/           Migration rules (v1 → v2 transformations)
     migrate.go       Rule implementations + helpers
     ion_read.go      Detector: read() on a binary ION output without fromIon()
+    pebble.go        Pebble-expression rewrites (json filter/function rename)
     migrate_test.go  Unit tests (~190 tests)
   output/            Write to dir or stdout
   update/            "a newer release exists" check (advisory, cached, fail-silent)
@@ -151,6 +152,7 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `removeDeprecatedProperties` | Removes: `Subflow.outputs`, `Schedule.backfills`, `Schedule.backfill`, trigger `minLogLevel` |
 | `renameExitCanceled` | Exit task: state `CANCELED` → `CANCELLED` (v2 enum spelling; **not** `KILLED`, which kills sibling tasks) |
 | `renameCanceledStates` | `CANCELED` → `CANCELLED` in any `states` list and in `ExecutionStatus` `in`/`notIn` (`State.Type` never had the single-L spelling, so these already failed on v1.3) |
+| `renamePebbleJSON` | Pebble `json` filter → `toJson`, `json()` function → `fromJson()` (both removed in v2; exact aliases on v1.3, so it also runs under `--stay-v1-compatible`). Lives in `pebble.go`: a small scanner that only rewrites inside `{{ … }}` / `{% … %}`, never inside quoted string literals there, and skips `{# #}`, `{% raw %}` and `{% verbatim %}`. So a shell `\| json` pipe or Python `json.loads(` outside an expression is untouched, and the `is json` test is excluded |
 | `migratePurgeKVExpiredOnly` | PurgeKV: deprecated `expiredOnly: <x>` → `behavior: {type: key, expiredOnly: <x>}` (blind removal was lossy for `false`). **Not** in the `rules` slice — gated post-step in `Apply()`, skipped under `--stay-v1-compatible` (`behavior` needs v1.3.28+) |
 | `migrateWorkerGroupToWorkerSelector` | EE: `workerGroup: {key, fallback}` → `workerSelector: {tags: [<key>], fallback}`, pinning `fallback: WAIT` when absent (v1 waited by default, v2 fails). Templated / non-RFC-1123 keys and fallback-without-key produce v2-incompatible warnings instead. Each converted key also produces **one advisory per flow**, because v2 only routes to a Worker Queue carrying that tag and the flow cannot declare it. Mixed severity: returns `[]Warning` like `detectSdkAuth`. Gated post-step in `Apply()`, skipped under `--stay-v1-compatible` |
 | `renameMultiselectOptions` | MULTISELECT inputs: `options` → `values` |
