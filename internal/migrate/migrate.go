@@ -29,6 +29,7 @@ var rules = []rule{
 	migrateHTTPBasicAuth,
 	removeDeprecatedHTTPOptions,
 	setLocalDeleteRecursive,
+	migrateLegacyScriptRunner,
 	removeRequiredFalseWithDefaults,
 	renameReservedFlowIDs,
 }
