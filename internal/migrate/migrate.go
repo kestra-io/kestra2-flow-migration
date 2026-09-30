@@ -671,14 +671,25 @@ var templateTypes = map[string]bool{
 	"io.kestra.core.tasks.flows.Template": true,
 }
 
+// echoTypes is the set of Echo type names for which we also rename
+// format → message: log.Log has no `format` property.
+var echoTypes = map[string]bool{
+	"io.kestra.plugin.core.debug.Echo": true,
+	"io.kestra.core.tasks.debugs.Echo": true,
+}
+
 // renameTypes applies all type renames from the typeRenames map.
-// For Template → Subflow it also renames templateId → flowId.
+// For Template → Subflow it also renames templateId → flowId, and for
+// Echo → Log format → message.
 // (flows-changes.md: multiple rules)
 func renameTypes(doc *yaml.Node) error {
 	walkMappings(doc, func(m *yaml.Node) {
 		typ := stringValue(m, "type")
 		if templateTypes[typ] {
 			renameKey(m, "templateId", "flowId")
+		}
+		if echoTypes[typ] {
+			renameKey(m, "format", "message")
 		}
 		if newType, ok := typeRenames[typ]; ok {
 			setStringValue(m, "type", newType)

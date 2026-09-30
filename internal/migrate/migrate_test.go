@@ -2143,6 +2143,50 @@ tasks:
 	}
 }
 
+// log.Log has no `format` property (it takes `message`), so renaming only the
+// type yields a flow 2.0 rejects on save: `Unrecognized field "format"`.
+// (kestra-ee#11390)
+func TestApply_RenameTypes_EchoFormatToMessage(t *testing.T) {
+	for _, typ := range []string{"io.kestra.plugin.core.debug.Echo", "io.kestra.core.tasks.debugs.Echo"} {
+		t.Run(typ, func(t *testing.T) {
+			in := `id: echo_to_log
+namespace: migration.flows
+tasks:
+  - id: echo
+    type: ` + typ + `
+    level: WARN
+    format: "Hello from Echo in {{ flow.namespace }}"
+`
+			want := `id: echo_to_log
+namespace: migration.flows
+tasks:
+  - id: echo
+    type: io.kestra.plugin.core.log.Log
+    level: WARN
+    message: "Hello from Echo in {{ flow.namespace }}"
+`
+			if out := apply(t, in); out != want {
+				t.Errorf("got:\n%s\nwant:\n%s", out, want)
+			}
+		})
+	}
+}
+
+// `format` is only renamed on Echo: other tasks with a `format` property
+// (e.g. debug.Return) keep it.
+func TestApply_RenameTypes_EchoFormatRenameScopedToEcho(t *testing.T) {
+	in := `id: test-flow
+namespace: company.team
+tasks:
+  - id: ret
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ flow.id }}"
+`
+	if out := apply(t, in); out != in {
+		t.Errorf("expected unchanged output, got:\n%s", out)
+	}
+}
+
 // EachSequential (old io.kestra.core.tasks.flows.* path) is no longer rewritten
 // to ForEach — ForEach is itself removed in v2. It is left intact and flagged for
 // manual Loop migration.
