@@ -1,0 +1,9 @@
+# kestra-ee#11383: execution state lists must use CANCELLED (double L)
+id: canceled_state
+namespace: company.team
+
+tasks:
+  - id: purge
+    type: io.kestra.plugin.core.execution.PurgeExecutions
+    states: [CANCELED]
+    endDate: "{{ now() }}"

@@ -23,6 +23,7 @@ var rules = []rule{
 	renameTypes,
 	removeDeprecatedProperties,
 	renameExitCanceled,
+	renameCanceledStates,
 	renameMultiselectOptions,
 	migrateHTTPBasicAuth,
 	removeDeprecatedHTTPOptions,
@@ -792,6 +793,46 @@ func renameExitCanceled(doc *yaml.Node) error {
 		for i := 0; i+1 < len(m.Content); i += 2 {
 			if m.Content[i].Value == "state" && m.Content[i+1].Value == "CANCELED" {
 				m.Content[i+1].Value = "CANCELLED"
+			}
+		}
+	})
+	return nil
+}
+
+// renameCanceledStates rewrites the execution state `CANCELED` → `CANCELLED`
+// in state lists: any `states` property (PurgeExecutions, the Flow trigger and
+// its `dependsOn` entries, …) and the `in` / `notIn` of an ExecutionStatus
+// condition, which the trigger rewrite folds into `dependsOn` states.
+// State.Type has only ever had the double-L spelling — the single-L alias
+// existed on Exit.ExitState alone (see renameExitCanceled) — so these values
+// already fail on v1.3 (`Unrecognized token 'CANCELED'`, verified on EE
+// v1.3.41); the 2.0 guide nonetheless lists the alias as removed. The
+// rewrite is valid on both versions and runs under StayV1Compatible too.
+// (flows-changes.md: `CANCELED` execution state alias removed)
+func renameCanceledStates(doc *yaml.Node) error {
+	walkMappings(doc, func(m *yaml.Node) {
+		executionStatus := strings.Contains(stringValue(m, "type"), "ExecutionStatus")
+		for i := 0; i+1 < len(m.Content); i += 2 {
+			switch m.Content[i].Value {
+			case "in", "notIn":
+				if !executionStatus {
+					continue
+				}
+			case "states":
+			default:
+				continue
+			}
+			v := m.Content[i+1]
+			if v.Kind == yaml.ScalarNode && v.Value == "CANCELED" {
+				v.Value = "CANCELLED"
+			}
+			if v.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, item := range v.Content {
+				if item.Kind == yaml.ScalarNode && item.Value == "CANCELED" {
+					item.Value = "CANCELLED"
+				}
 			}
 		}
 	})
