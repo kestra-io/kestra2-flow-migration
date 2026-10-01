@@ -69,7 +69,7 @@ func migrateStateToKV(doc *yaml.Node) []Warning {
 		return nil
 	}
 	flowSlug := slugify(stringValue(root, "id"))
-	var getIDs []string
+	var getIDs, setIDs []string
 	var warnings []Warning
 	walkMappings(doc, func(m *yaml.Node) {
 		kind, ok := stateTaskKinds[stringValue(m, "type")]
@@ -100,14 +100,17 @@ func migrateStateToKV(doc *yaml.Node) []Warning {
 		id := stringValue(m, "id")
 		switch kind {
 		case "Set":
+			if id != "" {
+				setIDs = append(setIDs, id)
+			}
+			if mappingValue(m, "data") == nil {
+				// v1.3 merged nothing and rewrote the current state; kv.Set
+				// requires `value`, so 2.0 rejects the task.
+				warnings = append(warnings, stateWarning(true, "task `%s`: state.Set without `data` only rewrote the current state; kv.Set requires a `value` — remove the task or set one", id))
+				break
+			}
 			renameKey(m, "data", "value")
-			warnings = append(warnings, Warning{
-				Message:        fmt.Sprintf("task `%s`: state.Set merged `data` into the stored state, kv.Set replaces the value — if several Set tasks or executions each update part of the state, combine the fields yourself before setting", id),
-				V2Incompatible: false,
-				DocURL:         DocMigrationGuide,
-				Code:           CodeStateMerge,
-				Subject:        "io.kestra.plugin.core.state.Set",
-			})
+			warnings = append(warnings, stateWarning(false, "task `%s`: state.Set merged `data` into the stored state, kv.Set replaces the value — if several Set tasks or executions each update part of the state, combine the fields yourself before setting", id))
 		case "Get":
 			if id != "" {
 				getIDs = append(getIDs, id)
@@ -117,7 +120,66 @@ func migrateStateToKV(doc *yaml.Node) []Warning {
 	if len(getIDs) > 0 {
 		rewriteStateGetOutputs(doc, getIDs)
 	}
+	for _, id := range setIDs {
+		if referencesOutputs(doc, id, "key", "count") {
+			warnings = append(warnings, stateWarning(false, "task `%s`: its `key` / `count` outputs are referenced, but kv.Set has no outputs — use the key literally, or a kv.Get after the Set", id))
+		}
+	}
 	return warnings
+}
+
+func stateWarning(incompatible bool, format string, id string) Warning {
+	return Warning{
+		Message:        fmt.Sprintf(format, id),
+		V2Incompatible: incompatible,
+		DocURL:         DocMigrationGuide,
+		Code:           CodeStateToKV,
+		Subject:        "io.kestra.plugin.core.state.Set",
+	}
+}
+
+// outputsRef matches `outputs.<id>.<field>` / `outputs['<id>'].<field>` for
+// the given ids and fields. Group 1 is the id accessor, group 2 the field.
+func outputsRef(ids []string, fields ...string) *regexp.Regexp {
+	quoted := make([]string, len(ids))
+	for i, id := range ids {
+		quoted[i] = regexp.QuoteMeta(id)
+	}
+	alt := strings.Join(quoted, "|")
+	return regexp.MustCompile(`outputs(\.(?:` + alt + `)|\[\s*['"](?:` + alt + `)['"]\s*\])\.(` + strings.Join(fields, "|") + `)\b`)
+}
+
+// referencesOutputs reports whether a Pebble expression in doc references
+// one of task id's given output fields.
+func referencesOutputs(doc *yaml.Node, id string, fields ...string) bool {
+	re := outputsRef([]string{id}, fields...)
+	found := false
+	walkScalarValues(doc, func(n *yaml.Node) {
+		if !found && strings.Contains(n.Value, "outputs") {
+			rewritePebbleBodies(n.Value, func(body string) string {
+				found = found || re.MatchString(body)
+				return body
+			})
+		}
+	})
+	return found
+}
+
+// walkScalarValues calls fn on every scalar under n that is not a mapping key.
+func walkScalarValues(n *yaml.Node, fn func(*yaml.Node)) {
+	if n == nil {
+		return
+	}
+	if n.Kind == yaml.ScalarNode {
+		fn(n)
+		return
+	}
+	for i, c := range n.Content {
+		if n.Kind == yaml.MappingNode && i%2 == 0 {
+			continue
+		}
+		walkScalarValues(c, fn)
+	}
 }
 
 // insertAfterKey inserts `key: value` right after after, or at the end.
@@ -137,39 +199,24 @@ func scalarNode(v string) *yaml.Node {
 }
 
 // rewriteStateGetOutputs rewrites `outputs.<id>.data` / `.count` (dot or
-// bracket access) for every former state.Get task id.
+// bracket access) for every former state.Get task id, inside Pebble
+// expressions and tags only.
 func rewriteStateGetOutputs(doc *yaml.Node, ids []string) {
-	quoted := make([]string, len(ids))
-	for i, id := range ids {
-		quoted[i] = regexp.QuoteMeta(id)
-	}
-	alt := strings.Join(quoted, "|")
-	re := regexp.MustCompile(`outputs(\.(?:` + alt + `)|\[\s*['"](?:` + alt + `)['"]\s*\])\.(data|count)\b`)
-	var walk func(n *yaml.Node)
-	walk = func(n *yaml.Node) {
-		if n == nil {
-			return
-		}
-		if n.Kind == yaml.ScalarNode {
-			if strings.Contains(n.Value, "outputs") {
-				n.Value = re.ReplaceAllStringFunc(n.Value, func(s string) string {
-					sm := re.FindStringSubmatch(s)
-					v := "outputs" + sm[1] + ".value"
-					value := "fromJson((" + v + " ?? '{}') contains '{' ? (" + v + " ?? '{}') : (" + v + " | base64decode))"
-					if sm[2] == "count" {
-						return "(" + value + " | length)"
-					}
-					return value
-				})
+	re := outputsRef(ids, "data", "count")
+	rewrite := func(body string) string {
+		return re.ReplaceAllStringFunc(body, func(s string) string {
+			sm := re.FindStringSubmatch(s)
+			v := "outputs" + sm[1] + ".value"
+			value := "fromJson((" + v + " ?? '{}') contains '{' ? (" + v + " ?? '{}') : (" + v + " | base64decode))"
+			if sm[2] == "count" {
+				return "(" + value + " | length)"
 			}
-			return
-		}
-		for i, c := range n.Content {
-			if n.Kind == yaml.MappingNode && i%2 == 0 {
-				continue
-			}
-			walk(c)
-		}
+			return value
+		})
 	}
-	walk(doc)
+	walkScalarValues(doc, func(n *yaml.Node) {
+		if strings.Contains(n.Value, "outputs") {
+			n.Value = rewritePebbleBodies(n.Value, rewrite)
+		}
+	})
 }

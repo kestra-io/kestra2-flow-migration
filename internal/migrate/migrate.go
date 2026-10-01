@@ -105,7 +105,7 @@ const (
 	CodeWorkerGroupConverted Code = "worker-group-converted"
 	CodeTriggerConditions    Code = "trigger-conditions"
 	CodeIonRead              Code = "ion-read"
-	CodeStateMerge           Code = "state-merge"
+	CodeStateToKV            Code = "state-to-kv"
 )
 
 // codeLabels are the short human labels the grouped summary prints. They are
@@ -123,7 +123,7 @@ var codeLabels = map[Code]string{
 	CodeWorkerGroupConverted: "`workerGroup` converted, needs a Worker Queue tag",
 	CodeTriggerConditions:    "trigger conditions could not be rewritten",
 	CodeIonRead:              "`read()` on a binary ION output needs `fromIon()`",
-	CodeStateMerge:           "state.Set merged its data, kv.Set replaces it",
+	CodeStateToKV:            "State Store task rewritten to kv.*, check its semantics",
 }
 
 // Label returns the short human label for a family, falling back to the raw

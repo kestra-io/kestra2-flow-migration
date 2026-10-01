@@ -67,10 +67,16 @@ var (
 )
 
 // rewritePebbleJSON applies the json → toJson / fromJson rename to every
-// Pebble expression (`{{ … }}`) and tag (`{% … %}`) in s. Text outside
-// delimiters, comments (`{# … #}`) and `{% raw %}` / `{% verbatim %}` regions
-// are copied unchanged, as is anything after an unterminated delimiter.
+// Pebble expression and tag in s (see rewritePebbleBodies).
 func rewritePebbleJSON(s string) string {
+	return rewritePebbleBodies(s, rewritePebbleJSONCode)
+}
+
+// rewritePebbleBodies applies fn to the body of every Pebble expression
+// (`{{ … }}`) and tag (`{% … %}`) in s. Text outside delimiters, comments
+// (`{# … #}`) and `{% raw %}` / `{% verbatim %}` regions are copied
+// unchanged, as is anything after an unterminated delimiter.
+func rewritePebbleBodies(s string, fn func(body string) string) string {
 	var b strings.Builder
 	i := 0
 	for i < len(s) {
@@ -122,7 +128,7 @@ func rewritePebbleJSON(s string) string {
 			}
 		}
 		b.WriteString(s[start : start+2])
-		b.WriteString(rewritePebbleJSONCode(body))
+		b.WriteString(fn(body))
 		b.WriteString(closing)
 		i = end
 	}
