@@ -1015,7 +1015,7 @@ func detectPebbleVersionArg(doc *yaml.Node) []string {
 
 // sdkAuthRequired lists the task types whose `auth` property is `@NotNull` on
 // the task model, so Kestra 2.0 refuses to *save* a flow that omits it
-// ("tasks[<id>].auth: must not be null"). No server-level or namespace
+// ("tasks[<id>].authConfigured: auth must be set"). No server-level or namespace
 // credential can rescue these — the flow cannot be stored at all — which is why
 // they are v2-incompatible rather than advisory.
 //
@@ -1137,7 +1137,7 @@ func detectSdkAuth(doc *yaml.Node) []Warning {
 		}
 		if required {
 			warnings = append(warnings, Warning{
-				Message:        fmt.Sprintf("line %d: `%s` has a mandatory `auth:` property in v2 — 2.0 rejects the flow on save (\"auth: must not be null\"), and server-level or namespace credentials cannot substitute; add an inline `auth:` block", m.Line, t),
+				Message:        fmt.Sprintf("line %d: `%s` has a mandatory `auth:` property in v2 — 2.0 rejects the flow on save (\"auth must be set\"), and server-level or namespace credentials cannot substitute; add an inline `auth:` block", m.Line, t),
 				V2Incompatible: true,
 				DocURL:         docSDKAuth,
 				Code:           CodeSdkAuthRequired,
