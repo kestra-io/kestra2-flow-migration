@@ -234,6 +234,9 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// still needs a matching Worker Queue on the instance. The detector
 		// tags both itself, like detectSdkAuth.
 		warnings = append(warnings, migrateWorkerGroupToWorkerSelector(&doc)...)
+		// ee.git.Clone was removed in plugin-ee-git 2.2.1; it becomes the OSS
+		// git.Clone it duplicated. The EE type still exists on v1.3.
+		migrateEEGitClone(&doc)
 		// v2-only validation: Schedule triggers must supply every input lacking
 		// a `defaults`. Warning-only (values can't be invented); a v1-compatible
 		// flow is unaffected, so this is gated to the v2 path.
@@ -1052,11 +1055,9 @@ var sdkAuthRequired = map[string]bool{
 	"io.kestra.plugin.ee.git.PushBlueprints": true,
 	"io.kestra.plugin.ee.git.PushUnitTests":  true,
 	"io.kestra.plugin.ee.git.PushDashboards": true,
-	// Makes no API call, yet still fails to save without `auth` — the
-	// constraint is on the model, not the behaviour. The OSS
-	// `io.kestra.plugin.git.Clone` has an optional `auth` and is not listed at
-	// all: it neither blocks the save nor calls the API.
-	"io.kestra.plugin.ee.git.Clone": true,
+	// io.kestra.plugin.ee.git.Clone is not listed: it no longer exists on 2.0
+	// and migrateEEGitClone rewrites it to the OSS io.kestra.plugin.git.Clone,
+	// whose `auth` is optional and which makes no API call.
 }
 
 // sdkAuthAdvisory lists the task types that call the Kestra API on every run but
