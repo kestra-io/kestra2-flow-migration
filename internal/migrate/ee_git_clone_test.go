@@ -87,3 +87,56 @@ tasks:
 		t.Errorf("expected unchanged output under --stay-v1-compatible, got:\n%s", out)
 	}
 }
+
+// A flow-level pluginDefaults entry is not a task: its type is renamed so
+// the manual Policy rewrite targets the right class, but nothing is added at
+// the entry level, where `strictHostKeyChecking` is not a valid key. And when
+// those defaults already set strictHostKeyChecking for the type, the tasks are
+// not pinned either: a task-level value would override the default.
+func TestApply_EEGitClone_PluginDefaults(t *testing.T) {
+	in := `id: f
+namespace: n
+tasks:
+  - id: clone
+    type: io.kestra.plugin.ee.git.Clone
+    url: https://github.com/org/repo
+pluginDefaults:
+  - type: io.kestra.plugin.ee.git.Clone
+    values:
+      branch: main
+`
+	want := `id: f
+namespace: n
+tasks:
+  - id: clone
+    type: io.kestra.plugin.git.Clone
+    url: https://github.com/org/repo
+    strictHostKeyChecking: true
+pluginDefaults:
+  - type: io.kestra.plugin.git.Clone
+    values:
+      branch: main
+`
+	if out := apply(t, in); out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
+	}
+
+	withDefault := `id: f
+namespace: n
+tasks:
+  - id: clone
+    type: io.kestra.plugin.ee.git.Clone
+    url: https://github.com/org/repo
+pluginDefaults:
+  - type: io.kestra.plugin.ee.git.Clone
+    values:
+      strictHostKeyChecking: false
+`
+	out := apply(t, withDefault)
+	if strings.Contains(out, "strictHostKeyChecking: true") {
+		t.Errorf("a pluginDefaults value for strictHostKeyChecking must not be overridden on the task, got:\n%s", out)
+	}
+	if strings.Contains(out, "ee.git.Clone") {
+		t.Errorf("both the task and the pluginDefaults entry must be renamed, got:\n%s", out)
+	}
+}
