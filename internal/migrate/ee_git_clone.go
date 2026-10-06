@@ -1,6 +1,10 @@
 package migrate
 
-import "gopkg.in/yaml.v3"
+import (
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // migrateEEGitClone rewrites io.kestra.plugin.ee.git.Clone to the OSS
 // io.kestra.plugin.git.Clone it duplicated. The EE copy was declared
@@ -18,12 +22,41 @@ import "gopkg.in/yaml.v3"
 // (plugin-git 2.0.12) has no `strictHostKeyChecking` property.
 // (flows-changes.md: io.kestra.plugin.ee.git.Clone removed)
 func migrateEEGitClone(doc *yaml.Node) {
+	// Flow-level plugin defaults are not tasks: an entry for the type only
+	// gets its type renamed (so the manual Policy rewrite the block needs
+	// targets the right class), never the pin. And when they already set
+	// strictHostKeyChecking for the type — by exact type or prefix, as v1
+	// matched them — the tasks are not pinned: a task-level value would
+	// override that default.
+	defaultEntries := map[*yaml.Node]bool{}
+	defaultsSetStrict := false
+	if root := docRoot(doc); root != nil {
+		for _, key := range []string{"pluginDefaults", "taskDefaults"} {
+			seq := mappingValue(root, key)
+			if seq == nil || seq.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, entry := range seq.Content {
+				if entry.Kind != yaml.MappingNode {
+					continue
+				}
+				defaultEntries[entry] = true
+				typ := stringValue(entry, "type")
+				if typ == "" || !strings.HasPrefix(eeGitClone, typ) {
+					continue
+				}
+				if values := mappingValue(entry, "values"); values != nil && mappingValue(values, "strictHostKeyChecking") != nil {
+					defaultsSetStrict = true
+				}
+			}
+		}
+	}
 	walkMappings(doc, func(m *yaml.Node) {
-		if stringValue(m, "type") != "io.kestra.plugin.ee.git.Clone" {
+		if stringValue(m, "type") != eeGitClone {
 			return
 		}
 		setStringValue(m, "type", "io.kestra.plugin.git.Clone")
-		if mappingValue(m, "strictHostKeyChecking") != nil {
+		if defaultEntries[m] || defaultsSetStrict || mappingValue(m, "strictHostKeyChecking") != nil {
 			return
 		}
 		pair := []*yaml.Node{
@@ -37,3 +70,5 @@ func migrateEEGitClone(doc *yaml.Node) {
 		m.Content = append(m.Content[:at], append(pair, m.Content[at:]...)...)
 	})
 }
+
+const eeGitClone = "io.kestra.plugin.ee.git.Clone"
