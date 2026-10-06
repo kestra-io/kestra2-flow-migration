@@ -59,6 +59,7 @@ internal/
   input/             File and directory resolution
   migrate/           Migration rules (v1 → v2 transformations)
     migrate.go       Rule implementations + helpers
+    ee_git_clone.go  EE ee.git.Clone → OSS git.Clone rewrite
     ion_read.go      Detector: read() on a binary ION output without fromIon()
     pebble.go        Pebble-expression rewrites (json filter/function rename)
     script_runner.go Legacy script `runner` / `docker` → `taskRunner` rewrite
@@ -157,6 +158,7 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | `renamePebbleJSON` | Pebble `json` filter → `toJson`, `json()` function → `fromJson()` (both removed in v2; exact aliases on v1.3, so it also runs under `--stay-v1-compatible`). Lives in `pebble.go`: a small scanner that only rewrites inside `{{ … }}` / `{% … %}`, never inside quoted string literals there, and skips `{# #}`, `{% raw %}` and `{% verbatim %}`. So a shell `\| json` pipe or Python `json.loads(` outside an expression is untouched, and the `is json` test is excluded |
 | `migratePurgeKVExpiredOnly` | PurgeKV: deprecated `expiredOnly: <x>` → `behavior: {type: key, expiredOnly: <x>}` (blind removal was lossy for `false`). **Not** in the `rules` slice — gated post-step in `Apply()`, skipped under `--stay-v1-compatible` (`behavior` needs v1.3.28+) |
 | `migrateWorkerGroupToWorkerSelector` | EE: `workerGroup: {key, fallback}` → `workerSelector: {tags: [<key>], fallback}`, pinning `fallback: WAIT` when absent (v1 waited by default, v2 fails). Templated / non-RFC-1123 keys and fallback-without-key produce v2-incompatible warnings instead. Each converted key also produces **one advisory per flow**, because v2 only routes to a Worker Queue carrying that tag and the flow cannot declare it. Mixed severity: returns `[]Warning` like `detectSdkAuth`. Gated post-step in `Apply()`, skipped under `--stay-v1-compatible` |
+| `migrateEEGitClone` | EE: `io.kestra.plugin.ee.git.Clone` (internal duplicate, removed in plugin-ee-git 2.2.1) → `io.kestra.plugin.git.Clone`, pinning `strictHostKeyChecking: true` when unset (the EE default; `git.Clone` defaults to `false`). Gated post-step in `Apply()`, skipped under `--stay-v1-compatible`. Lives in `ee_git_clone.go` |
 | `renameMultiselectOptions` | MULTISELECT inputs: `options` → `values` |
 | `migrateHTTPBasicAuth` | `options.basicAuthUser`/`basicAuthPassword` → `options.auth: {type: BASIC, username, password}` |
 | `removeDeprecatedHTTPOptions` | Removes `options.connectionPoolIdleTimeout` from any task |
@@ -184,12 +186,12 @@ Detected types: `MultipleCondition`, `Count`, `Resume`, `Toggle`, `git.Push`, `n
 
 `detectSdkAuth()` flags tasks that need Kestra API credentials in v2 and carry no inline `auth:` block. **Mixed severity** — the detector returns `[]Warning` and tags each one itself, because two different failures hide behind "needs auth":
 
-- **`sdkAuthRequired` → v2-incompatible.** `auth` is `@NotNull` on the task model, so 2.0 refuses to *save* the flow (`tasks[<id>].authConfigured: auth must be set`) and no server-level or namespace credential can rescue it. `git.SyncFlow`, `git.TenantSync`, `git.NamespaceSync`, all eight `ee.git.Sync*`/`Push*` types, and `ee.git.Clone`.
+- **`sdkAuthRequired` → v2-incompatible.** `auth` is `@NotNull` on the task model, so 2.0 refuses to *save* the flow (`tasks[<id>].authConfigured: auth must be set`) and no server-level or namespace credential can rescue it. `git.SyncFlow`, `git.TenantSync`, `git.NamespaceSync`, all eight `ee.git.Sync*`/`Push*` types.
 - **`sdkAuthAdvisory` (plus the `io.kestra.plugin.kestra.*` prefix) → advisory.** `auth` is optional on the model: the flow deploys and 401s at run time unless credentials come from namespace/tenant defaults or the server config, which the flow file cannot show. `git.SyncFlows`, `git.Sync`, `git.PushFlows`, `ai.tool.KestraFlow`, and every `kestra.*` task (all 39 in `plugin-kestra 2.0.3` probed — none mandatory).
 
 The split is a property of the shipped plugin class hierarchy (`plugin-git 4.0.0`, `plugin-ee-git 2.2.0`), not of whether the task calls the API. One line explains all of it: OSS `AbstractKestraTask` declares `@NotNull auth`, OSS `AbstractCloningTask` declares a plain `auth`, and **EE `AbstractCloningTask extends AbstractKestraTask`** — so every EE git task inherits the mandatory property. Two consequences that look like bugs but are not:
 
-- **`ee.git.Clone` is flagged even though it makes no API call** — the constraint is on the model. The OSS `git.Clone` is not flagged at all (optional `auth`, no API call).
+- **`ee.git.Clone` is not an auth case** — it no longer exists on 2.0 (removed in plugin-ee-git 2.2.1), so `migrateEEGitClone` rewrites it to the OSS `git.Clone` instead. Neither Clone is in the auth lists (optional `auth`, no API call).
 - **`git.NamespaceSync` is edition-dependent**: optional on plugin-git 4.0.0, mandatory on plugin-ee-git 2.2.0, which ships the *same FQN*. A flow cannot declare its target edition, so it is classified save-blocking — an EE bulk deploy failing on save is the worse outcome, and on OSS the task needs credentials anyway to avoid a 401.
 
 Three type strings that look plausible **do not exist in 2.0.0** and must not be matched: `git.SyncDashboards` and `git.PushDashboards` (dashboard sync is EE-only, under `ee.git.*`; no `@Plugin(aliases = ...)` bridges them) and `ai.KestraFlow` (the real class is `ai.tool.KestraFlow`, a nested tool inside an agent's `tools:` list — `walkMappings` reaches it anyway). `SyncNamespaceFiles` stays in `sdkAuthConditional`, advisory, flagged only when `includeChildNamespaces` is true or templated. `git.Push` is excluded — it already reports as a removed type. Note `renameTypes` moves `core.log.Fetch` → `kestra.logs.Fetch`, i.e. into the advisory prefix.

@@ -4546,7 +4546,6 @@ func TestDetectSdkAuthMandatoryAuthIsV2Incompatible(t *testing.T) {
 		"io.kestra.plugin.ee.git.PushBlueprints",
 		"io.kestra.plugin.ee.git.PushUnitTests",
 		"io.kestra.plugin.ee.git.PushDashboards",
-		"io.kestra.plugin.ee.git.Clone",
 	} {
 		in := "id: sync\nnamespace: dev\ntasks:\n  - id: t\n    type: " + typ + "\n"
 		_, warnings := applyWithWarningDetails(t, in)
@@ -4717,34 +4716,17 @@ tasks:
 	}
 }
 
-// ee.git.Clone makes no Kestra API call, but plugin-ee-git 2.2.0 has it extend
-// AbstractCloningTask → AbstractKestraTask, where `auth` is `@NotNull`. So the
-// flow fails to *save* without it: the constraint is on the model, not the
-// behaviour. The OSS io.kestra.plugin.git.Clone has an optional auth and is not
-// flagged at all.
-func TestDetectSdkAuthEEGitCloneFlaggedOssCloneNot(t *testing.T) {
-	ee := `id: clone
-namespace: dev
-tasks:
-  - id: clone
-    type: io.kestra.plugin.ee.git.Clone
-    url: https://github.com/kestra-io/flows
-`
-	_, warnings := applyWithWarningDetails(t, ee)
-	if !hasWarningContaining(warningMessages(warnings), "mandatory `auth:` property") {
-		t.Errorf("ee.git.Clone must be flagged (auth is @NotNull), got %v", warnings)
-	}
-
-	oss := `id: clone
-namespace: dev
-tasks:
-  - id: clone
-    type: io.kestra.plugin.git.Clone
-    url: https://github.com/kestra-io/flows
-`
-	_, warnings = applyWithWarningDetails(t, oss)
-	if hasWarningContaining(warningMessages(warnings), "auth") {
-		t.Errorf("OSS git.Clone has optional auth and makes no API call, got %v", warnings)
+// Neither Clone gets an SDK-auth warning: the OSS io.kestra.plugin.git.Clone
+// has an optional auth and makes no API call, and io.kestra.plugin.ee.git.Clone
+// (removed in plugin-ee-git 2.2.1) is rewritten to it by migrateEEGitClone
+// instead of being asked for an `auth:` block that cannot save it (#38).
+func TestDetectSdkAuthCloneNotFlagged(t *testing.T) {
+	for _, typ := range []string{"io.kestra.plugin.ee.git.Clone", "io.kestra.plugin.git.Clone"} {
+		in := "id: clone\nnamespace: dev\ntasks:\n  - id: clone\n    type: " + typ + "\n    url: https://github.com/kestra-io/flows\n"
+		_, warnings := applyWithWarningDetails(t, in)
+		if hasWarningContaining(warningMessages(warnings), "auth") {
+			t.Errorf("%s must not get an SDK-auth warning, got %v", typ, warnings)
+		}
 	}
 }
 

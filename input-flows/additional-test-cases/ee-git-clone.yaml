@@ -1,0 +1,9 @@
+# kestra-io/kestra2-flow-migration#38: ee.git.Clone was removed in plugin-ee-git 2.2.1 → OSS git.Clone
+id: ee_git_clone
+namespace: company.team
+
+tasks:
+  - id: clone
+    type: io.kestra.plugin.ee.git.Clone
+    url: https://github.com/kestra-io/scripts
+    branch: main
