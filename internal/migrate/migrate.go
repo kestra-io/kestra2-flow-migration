@@ -475,15 +475,29 @@ func renameInputNameToID(doc *yaml.Node) error {
 //
 // The server rejects a BOOLEAN under `onResume` just as loudly as at the root
 // ("Validation error: Invalid type: BOOLEAN"), hence inputDefinitions.
+//
+// The same renames apply to the definitions in the root-level `outputs:` list.
+// Only that one key is read: task-level `outputs` (Subflow, Loop, …) are
+// different structures and are left alone.
 func renameInputTypes(doc *yaml.Node) error {
-	inputDefinitions(doc, func(item *yaml.Node) {
+	rename := func(item *yaml.Node) {
 		switch stringValue(item, "type") {
 		case "BOOLEAN":
 			setStringValue(item, "type", "BOOL")
 		case "ENUM":
 			setStringValue(item, "type", "SELECT")
 		}
-	})
+	}
+	inputDefinitions(doc, rename)
+	if root := docRoot(doc); root != nil && root.Kind == yaml.MappingNode {
+		if outputs := mappingValue(root, "outputs"); outputs != nil && outputs.Kind == yaml.SequenceNode {
+			for _, item := range outputs.Content {
+				if item.Kind == yaml.MappingNode {
+					rename(item)
+				}
+			}
+		}
+	}
 	return nil
 }
 

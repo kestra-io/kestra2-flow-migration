@@ -253,6 +253,115 @@ inputs:
 	}
 }
 
+// Root-level flow `outputs` use the same type names as inputs. `type: BOOL\n`
+// (with the newline) is asserted so a surviving `BOOLEAN` cannot satisfy it.
+
+func TestApply_RenameOutputType_BOOLEAN(t *testing.T) {
+	out := apply(t, `id: f
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: flag
+    type: BOOLEAN
+    value: "{{ true }}"
+`)
+	if strings.Contains(out, "type: BOOLEAN") {
+		t.Errorf("output type BOOLEAN not renamed; got:\n%s", out)
+	}
+	if !strings.Contains(out, "type: BOOL\n") {
+		t.Errorf("output type missing 'type: BOOL'; got:\n%s", out)
+	}
+}
+
+func TestApply_RenameOutputType_ENUM(t *testing.T) {
+	out := apply(t, `id: f
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: kind
+    type: ENUM
+    value: a
+`)
+	if strings.Contains(out, "type: ENUM") {
+		t.Errorf("output type ENUM not renamed; got:\n%s", out)
+	}
+	if !strings.Contains(out, "type: SELECT\n") {
+		t.Errorf("output type missing 'type: SELECT'; got:\n%s", out)
+	}
+}
+
+func TestApply_RenameOutputType_InputAndOutputTogether(t *testing.T) {
+	out := apply(t, `id: f
+namespace: company.team
+inputs:
+  - id: enabled
+    type: BOOLEAN
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: flag
+    type: BOOLEAN
+    value: "{{ inputs.enabled }}"
+`)
+	if strings.Contains(out, "type: BOOLEAN") {
+		t.Errorf("a BOOLEAN survived; got:\n%s", out)
+	}
+	if n := strings.Count(out, "type: BOOL\n"); n != 2 {
+		t.Errorf("expected the input and the output as BOOL (2), got %d; got:\n%s", n, out)
+	}
+}
+
+func TestApply_RenameOutputType_LeavesOtherTypesAlone(t *testing.T) {
+	in := `id: f
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: text
+    type: STRING
+    value: hello
+  - id: count
+    type: INT
+    value: 1
+`
+	if out := apply(t, in); out != in {
+		t.Errorf("unrelated output types were rewritten; got:\n%s", out)
+	}
+}
+
+func TestApply_RenameOutputType_LeavesTaskLevelOutputsAlone(t *testing.T) {
+	// Only the root `outputs:` list holds output definitions. A task's own
+	// `outputs` mapping is a different structure and must not be walked. The
+	// task is not a Subflow, since removeDeprecatedProperties would delete that
+	// key and the assertion would then pass for the wrong reason.
+	out := apply(t, `id: f
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+    outputs:
+      type: ENUM
+      other:
+        type: BOOLEAN
+`)
+	for _, want := range []string{"type: ENUM", "type: BOOLEAN"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("task-level outputs were rewritten (missing %q); got:\n%s", want, out)
+		}
+	}
+}
+
 func TestApply_RenameInputType_PreservesOtherTypes(t *testing.T) {
 	in := `
 id: test-flow

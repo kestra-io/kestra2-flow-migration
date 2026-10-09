@@ -142,7 +142,7 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | Rule | What it does |
 |------|-------------|
 | `renameInputNameToID` | Inputs: `name` → `id` |
-| `renameInputTypes` | Inputs: `BOOLEAN` → `BOOL`, `ENUM` → `SELECT` |
+| `renameInputTypes` | Inputs and root-level flow `outputs`: `BOOLEAN` → `BOOL`, `ENUM` → `SELECT` (task-level `outputs` untouched) |
 | `renameMaxAttemptToMaxAttempts` | Retry: `maxAttempt` → `maxAttempts` (global) |
 | `renamePauseDelayToPauseDuration` | Pause task: `delay` → `pauseDuration` |
 | `normalizeFetchType` | `fetchType: STORE/FETCH` → `store: true` / `fetch: true` (specific plugins) |

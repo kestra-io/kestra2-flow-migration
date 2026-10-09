@@ -1,0 +1,27 @@
+# Root-level flow outputs: BOOLEAN to BOOL, ENUM to SELECT (same renames as inputs)
+id: flow_output_types
+namespace: company.team
+
+inputs:
+  - id: enabled
+    type: BOOL
+
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "enabled={{ inputs.enabled }}"
+
+outputs:
+  - id: flag
+    type: BOOL
+    value: "{{ inputs.enabled }}"
+
+  - id: mode
+    type: SELECT
+    value: fast
+
+  - id: summary
+    type: STRING
+    value: |
+      enabled: {{ inputs.enabled }}
+      mode: fast
