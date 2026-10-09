@@ -4863,3 +4863,232 @@ triggers:
 		})
 	}
 }
+
+// ── Detector: tasks missing a property that is mandatory in v2 ───────────────
+
+const databricksCreateJobType = "io.kestra.plugin.databricks.job.CreateJob"
+
+// databricksJobFlow wraps a CreateJob task body (indented under the task) in a
+// minimal flow.
+func databricksJobFlow(taskBody string) string {
+	return "id: dbx\nnamespace: dev\ntasks:\n  - id: run_job\n    type: " + databricksCreateJobType + "\n" + taskBody
+}
+
+// requiredPropertyWarnings returns only the warnings of the required-property
+// family.
+func requiredPropertyWarnings(warnings []Warning) []Warning {
+	var out []Warning
+	for _, w := range warnings {
+		if w.Code == CodeRequiredProperty {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// 2.0.4 answers `tasks[run_job].jobName: must not be null` for a CreateJob with
+// no `jobName`, and the property cannot be invented, so the flow must be
+// reported as one 2.0 refuses to save (kestra2-flow-migration#40).
+func TestDetectMissingRequiredPropertyDatabricksJobName(t *testing.T) {
+	in := databricksJobFlow("    host: \"{{ secret('DATABRICKS_HOST') }}\"\n    jobTasks:\n      - taskKey: k\n")
+	out, warnings := applyWithWarningDetails(t, in)
+	if out != in {
+		t.Errorf("a detector must not rewrite the flow, got:\n%s", out)
+	}
+	got := requiredPropertyWarnings(warnings)
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one required-property warning, got %+v", warnings)
+	}
+	w := got[0]
+	if !w.V2Incompatible {
+		t.Errorf("a missing @NotNull property is rejected on save, want V2Incompatible=true")
+	}
+	if w.Subject != databricksCreateJobType {
+		t.Errorf("Subject = %q, want %q", w.Subject, databricksCreateJobType)
+	}
+	if w.DocURL != DocMigrationGuide {
+		t.Errorf("DocURL = %q, want the migration guide landing page", w.DocURL)
+	}
+	for _, want := range []string{"line 4", "`run_job`", "`jobName`", databricksCreateJobType} {
+		if !strings.Contains(w.Message, want) {
+			t.Errorf("message %q does not mention %s", w.Message, want)
+		}
+	}
+	if !HasV2Incompatible(warnings) {
+		t.Errorf("HasV2Incompatible must report the flow")
+	}
+}
+
+// A value of any kind satisfies @NotNull: literal, templated, or an empty string.
+func TestDetectMissingRequiredPropertySuppressedWhenSet(t *testing.T) {
+	for name, val := range map[string]string{
+		"literal":   "nightly-rollup",
+		"templated": "\"{{ inputs.job_name }}\"",
+		"quoted":    "\"nightly rollup\"",
+		"empty":     "\"\"",
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := databricksJobFlow("    jobName: " + val + "\n    jobTasks:\n      - taskKey: k\n")
+			_, warnings := applyWithWarningDetails(t, in)
+			if got := requiredPropertyWarnings(warnings); len(got) != 0 {
+				t.Errorf("expected no required-property warning, got %+v", got)
+			}
+		})
+	}
+}
+
+// `jobName:` with no value, `null` and `~` all deserialize to null, which fails
+// @NotNull exactly like an absent key.
+func TestDetectMissingRequiredPropertyNullValue(t *testing.T) {
+	for name, val := range map[string]string{
+		"empty": "",
+		"null":  " null",
+		"tilde": " ~",
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := databricksJobFlow("    jobName:" + val + "\n    jobTasks:\n      - taskKey: k\n")
+			_, warnings := applyWithWarningDetails(t, in)
+			if got := requiredPropertyWarnings(warnings); len(got) != 1 {
+				t.Errorf("expected one required-property warning for a null jobName, got %+v", warnings)
+			}
+		})
+	}
+}
+
+// The corpus flow nests the task inside AllowFailure; the detector has to find
+// it at any depth and in the `errors` / `finally` branches, and report each task.
+func TestDetectMissingRequiredPropertyNestedAndMultiple(t *testing.T) {
+	in := `id: dbx
+namespace: dev
+tasks:
+  - id: allow_failure
+    type: io.kestra.plugin.core.flow.AllowFailure
+    tasks:
+      - id: nested_job
+        type: io.kestra.plugin.databricks.job.CreateJob
+        jobTasks:
+          - taskKey: k
+  - id: named_job
+    type: io.kestra.plugin.databricks.job.CreateJob
+    jobName: ok
+    jobTasks:
+      - taskKey: k
+errors:
+  - id: error_job
+    type: io.kestra.plugin.databricks.job.CreateJob
+    jobTasks:
+      - taskKey: k
+finally:
+  - id: finally_job
+    type: io.kestra.plugin.databricks.job.CreateJob
+    jobTasks:
+      - taskKey: k
+`
+	_, warnings := applyWithWarningDetails(t, in)
+	got := requiredPropertyWarnings(warnings)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 warnings (nested_job, error_job, finally_job), got %+v", got)
+	}
+	for _, id := range []string{"`nested_job`", "`error_job`", "`finally_job`"} {
+		found := false
+		for _, w := range got {
+			if strings.Contains(w.Message, id) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no warning names task %s: %+v", id, got)
+		}
+	}
+	for _, w := range got {
+		if strings.Contains(w.Message, "`named_job`") {
+			t.Errorf("named_job sets jobName and must not be flagged: %q", w.Message)
+		}
+	}
+}
+
+// 1.3 accepts the flow on save, so under --stay-v1-compatible the finding does
+// not apply — the severity describes a 2.0 deployment.
+func TestDetectMissingRequiredPropertySkippedUnderV1Compatible(t *testing.T) {
+	in := databricksJobFlow("    jobTasks:\n      - taskKey: k\n")
+	_, warnings := applyWithWarningDetails(t, in, StayV1Compatible())
+	if got := requiredPropertyWarnings(warnings); len(got) != 0 {
+		t.Errorf("expected no required-property warning under --stay-v1-compatible, got %+v", got)
+	}
+}
+
+// A `pluginDefaults` entry carries `type:` but is not a task, and its `values:`
+// may well supply the property; it must not be reported as a task missing
+// `jobName`. (The block itself is reported by detectPluginDefaults.)
+func TestDetectMissingRequiredPropertyIgnoresPluginDefaults(t *testing.T) {
+	for _, key := range []string{"pluginDefaults", "taskDefaults"} {
+		t.Run(key, func(t *testing.T) {
+			in := "id: dbx\nnamespace: dev\n" + key + ":\n  - type: " + databricksCreateJobType + "\n    values:\n      jobName: shared\ntasks:\n  - id: log\n    type: io.kestra.plugin.core.log.Log\n    message: hi\n"
+			_, warnings := applyWithWarningDetails(t, in)
+			if got := requiredPropertyWarnings(warnings); len(got) != 0 {
+				t.Errorf("a %s entry is not a task, got %+v", key, got)
+			}
+		})
+	}
+}
+
+// Sibling Databricks tasks and unrelated types are untouched.
+func TestDetectMissingRequiredPropertyOtherTypesUnaffected(t *testing.T) {
+	in := `id: dbx
+namespace: dev
+tasks:
+  - id: cluster
+    type: io.kestra.plugin.databricks.cluster.CreateCluster
+    clusterName: demo
+  - id: query
+    type: io.kestra.plugin.databricks.sql.Query
+    sql: select 1
+`
+	_, warnings := applyWithWarningDetails(t, in)
+	if got := requiredPropertyWarnings(warnings); len(got) != 0 {
+		t.Errorf("expected no required-property warning, got %+v", got)
+	}
+}
+
+// With --disable-v2-incompatible the flow must become a deployable placeholder
+// — that is what makes the bulk deploy of the whole corpus succeed (#40: 406/407
+// before, with this flow the one failure).
+func TestDetectMissingRequiredPropertyDisablesFlow(t *testing.T) {
+	in := databricksJobFlow("    jobTasks:\n      - taskKey: k\n")
+	out, warnings := applyWithWarningDetails(t, in, DisableV2Incompatible())
+	if !HasV2Incompatible(warnings) {
+		t.Fatalf("expected a v2-incompatible warning, got %+v", warnings)
+	}
+	var f disabledFlow
+	if err := yaml.Unmarshal([]byte(out), &f); err != nil {
+		t.Fatalf("disabled output is not valid YAML: %v\n%s", err, out)
+	}
+	if !f.Disabled || f.Labels["v2-migration"] != "needs-manual-rewrite" {
+		t.Errorf("flow was not disabled/labelled:\n%s", out)
+	}
+	if !strings.Contains(f.Description, "`jobName`") {
+		t.Errorf("description does not carry the reason:\n%s", f.Description)
+	}
+}
+
+// The corpus flow from the QA report: the only false negative of 2.6.1 over the
+// 407-flow corpus. It must be flagged, and its migrated bytes must stay equal to
+// the input (output-flows/ is generated and must not change).
+func TestDetectMissingRequiredPropertyCorpusFlow(t *testing.T) {
+	path := filepath.Join("..", "..", "input-flows", "example-blueprints", "on-demand-cluster-job.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("corpus flow not available: %v", err)
+	}
+	out, warnings, err := Apply(data)
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if string(out) != string(data) {
+		t.Errorf("the flow must pass through byte-identical")
+	}
+	got := requiredPropertyWarnings(warnings)
+	if len(got) != 1 || !got[0].V2Incompatible || !strings.Contains(got[0].Message, "`run_job`") {
+		t.Errorf("expected one v2-incompatible warning on run_job, got %+v", warnings)
+	}
+}
