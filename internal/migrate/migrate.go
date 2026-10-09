@@ -106,6 +106,7 @@ const (
 	CodeTriggerConditions    Code = "trigger-conditions"
 	CodeIonRead              Code = "ion-read"
 	CodeStateToKV            Code = "state-to-kv"
+	CodeRequiredProperty     Code = "required-property"
 )
 
 // codeLabels are the short human labels the grouped summary prints. They are
@@ -124,6 +125,7 @@ var codeLabels = map[Code]string{
 	CodeTriggerConditions:    "trigger conditions could not be rewritten",
 	CodeIonRead:              "`read()` on a binary ION output needs `fromIon()`",
 	CodeStateToKV:            "State Store task rewritten to kv.*, check its semantics",
+	CodeRequiredProperty:     "task missing a property mandatory in v2, flow rejected on save",
 }
 
 // Label returns the short human label for a family, falling back to the raw
@@ -249,6 +251,10 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		// `auth` blocks the save, an optional one only 401s at run time, so the
 		// detector tags each warning itself.
 		warnings = append(warnings, detectSdkAuth(&doc)...)
+		// Properties that became `@NotNull` in the plugin versions bundled with
+		// v2: the flow saved on v1.3 and fails (at run time) there too, but 2.0
+		// refuses to save it. The value cannot be invented, so warning-only.
+		warnings = append(warnings, detectMissingRequiredProperties(&doc)...)
 		// `pluginDefaults` / `taskDefaults` are removed outright in v2 with no
 		// mechanical replacement — warning-only, like the flow-iteration types.
 		warnings = append(warnings, v2Incompatible(detectPluginDefaults(&doc), docPluginDefaults, CodePluginDefaults)...)
@@ -1153,6 +1159,85 @@ func detectSdkAuth(doc *yaml.Node) []Warning {
 		})
 	})
 	return warnings
+}
+
+// requiredProperty is a task property that is mandatory in the plugin version
+// shipped with v2, together with the hint worded into the warning.
+type requiredProperty struct {
+	name string
+	hint string
+}
+
+// v2RequiredProperties maps a task type to the properties that 2.0 refuses to
+// save the flow without. Only add a row when the property is `@NotNull` (or
+// otherwise validated) on the task model of the plugin bundled with 2.0 *and*
+// was optional on the v1.3 one, so the flow used to save; confirm it with a live
+// `flows validate` probe rather than from the property's Javadoc.
+//
+//   - `io.kestra.plugin.databricks.job.CreateJob.jobName`: `@NotNull` since
+//     plugin-databricks #263 (2026-08-06, shipped in 1.4.x); before that the
+//     property was optional on the model and `run()` called `orElseThrow()` on
+//     it, so such a flow saved on v1.3 and failed when it ran. 2.0.4 answers
+//     `tasks[<id>].jobName: must not be null`. `jobTasks` is not listed: it was
+//     already `@NotNull @NotEmpty` on v1.3, so a flow without it never saved.
+var v2RequiredProperties = map[string][]requiredProperty{
+	"io.kestra.plugin.databricks.job.CreateJob": {
+		{name: "jobName", hint: "set it to the name the Databricks job should have in the Jobs UI"},
+	},
+}
+
+// detectMissingRequiredProperties flags tasks of a type listed in
+// v2RequiredProperties that omit a mandatory property (absent, or present with a
+// null value — `jobName:` / `jobName: null` / `jobName: ~` — which 2.0 rejects
+// the same way). v2-incompatible: 2.0 returns a constraint violation on save.
+//
+// Not auto-fixable: the tool cannot invent a job name, and a name derived from
+// the task id would silently create a Databricks job nobody chose to name. A
+// templated value (`"{{ inputs.name }}"`) or an empty string counts as set; only
+// a missing or null value is flagged, matching what `@NotNull` checks.
+//
+// The flow-level `pluginDefaults` / `taskDefaults` blocks are skipped: their
+// `type:` entries are not tasks, and a property supplied through `values:` is
+// not visible on the task anyway. A flow carrying such a block is already
+// reported by detectPluginDefaults.
+func detectMissingRequiredProperties(doc *yaml.Node) []Warning {
+	root := docRoot(doc)
+	if root == nil || root.Kind != yaml.MappingNode {
+		return nil
+	}
+	var warnings []Warning
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		switch root.Content[i].Value {
+		case "pluginDefaults", "taskDefaults":
+			continue
+		}
+		walkMappings(root.Content[i+1], func(m *yaml.Node) {
+			t := stringValue(m, "type")
+			for _, p := range v2RequiredProperties[t] {
+				if v := mappingValue(m, p.name); v != nil && v.ShortTag() != "!!null" {
+					continue
+				}
+				warnings = append(warnings, Warning{
+					Message: fmt.Sprintf("line %d: %s has no `%s`, which is mandatory in v2 — 2.0 rejects the flow on save (\"%s: must not be null\"); the migration cannot invent a value, %s",
+						m.Line, describeTask(m, t), p.name, p.name, p.hint),
+					V2Incompatible: true,
+					DocURL:         DocMigrationGuide,
+					Code:           CodeRequiredProperty,
+					Subject:        t,
+				})
+			}
+		})
+	}
+	return warnings
+}
+
+// describeTask words a task for a warning: its id when it has one, plus its
+// type.
+func describeTask(m *yaml.Node, typ string) string {
+	if id := stringValue(m, "id"); id != "" {
+		return fmt.Sprintf("task `%s` (`%s`)", id, typ)
+	}
+	return fmt.Sprintf("`%s`", typ)
 }
 
 // renameMultiselectOptions renames `options` → `values` on MULTISELECT inputs.
