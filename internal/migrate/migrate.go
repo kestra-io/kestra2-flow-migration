@@ -125,7 +125,7 @@ var codeLabels = map[Code]string{
 	CodeTriggerConditions:    "trigger conditions could not be rewritten",
 	CodeIonRead:              "`read()` on a binary ION output needs `fromIon()`",
 	CodeStateToKV:            "State Store task rewritten to kv.*, check its semantics",
-	CodeRequiredProperty:     "task missing a property mandatory in v2, flow rejected on save",
+	CodeRequiredProperty:     "task missing a property mandatory in v2",
 }
 
 // Label returns the short human label for a family, falling back to the raw
@@ -1188,14 +1188,16 @@ var v2RequiredProperties = map[string][]requiredProperty{
 }
 
 // detectMissingRequiredProperties flags tasks of a type listed in
-// v2RequiredProperties that omit a mandatory property (absent, or present with a
-// null value — `jobName:` / `jobName: null` / `jobName: ~` — which 2.0 rejects
-// the same way). v2-incompatible: 2.0 returns a constraint violation on save.
+// v2RequiredProperties that omit a mandatory property (absent, or set to an
+// explicit null — `jobName: null` / `jobName: ~` — which 2.0 rejects the same
+// way). v2-incompatible: 2.0 returns a constraint violation on save.
 //
 // Not auto-fixable: the tool cannot invent a job name, and a name derived from
 // the task id would silently create a Databricks job nobody chose to name. A
 // templated value (`"{{ inputs.name }}"`) or an empty string counts as set; only
-// a missing or null value is flagged, matching what `@NotNull` checks.
+// a missing or null value is flagged, matching what `@NotNull` checks. A bare
+// `jobName:` also counts as set: yaml.v3 tags it `!!null`, but 2.0.4 saves it
+// (live `flows validate` probe), so only an explicit `null` / `~` is flagged.
 //
 // The flow-level `pluginDefaults` / `taskDefaults` blocks are skipped: their
 // `type:` entries are not tasks, and a property supplied through `values:` is
@@ -1215,7 +1217,7 @@ func detectMissingRequiredProperties(doc *yaml.Node) []Warning {
 		walkMappings(root.Content[i+1], func(m *yaml.Node) {
 			t := stringValue(m, "type")
 			for _, p := range v2RequiredProperties[t] {
-				if v := mappingValue(m, p.name); v != nil && v.ShortTag() != "!!null" {
+				if v := mappingValue(m, p.name); v != nil && (v.ShortTag() != "!!null" || v.Value == "") {
 					continue
 				}
 				warnings = append(warnings, Warning{

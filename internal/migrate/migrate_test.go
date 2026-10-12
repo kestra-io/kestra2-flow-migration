@@ -4978,6 +4978,9 @@ func TestDetectMissingRequiredPropertySuppressedWhenSet(t *testing.T) {
 		"templated": "\"{{ inputs.job_name }}\"",
 		"quoted":    "\"nightly rollup\"",
 		"empty":     "\"\"",
+		// A bare `jobName:` is saved by 2.0.4 (verified live): only an explicit
+		// `null` / `~` reaches the task as null.
+		"bare": "",
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := databricksJobFlow("    jobName: " + val + "\n    jobTasks:\n      - taskKey: k\n")
@@ -4989,11 +4992,10 @@ func TestDetectMissingRequiredPropertySuppressedWhenSet(t *testing.T) {
 	}
 }
 
-// `jobName:` with no value, `null` and `~` all deserialize to null, which fails
-// @NotNull exactly like an absent key.
+// An explicit `null` or `~` deserializes to null, which fails @NotNull exactly
+// like an absent key.
 func TestDetectMissingRequiredPropertyNullValue(t *testing.T) {
 	for name, val := range map[string]string{
-		"empty": "",
 		"null":  " null",
 		"tilde": " ~",
 	} {
