@@ -8,8 +8,8 @@ import (
 // #38: io.kestra.plugin.ee.git.Clone was an internal duplicate of plugin-git's
 // Clone, deleted in plugin-ee-git 2.2.1: EE 2.0 rejects it as an unknown type,
 // and adding `auth:` (the old advice) does not help. It becomes
-// io.kestra.plugin.git.Clone, pinning the strictHostKeyChecking: true default
-// the EE copy had (git.Clone defaults to false).
+// io.kestra.plugin.git.Clone. Over HTTPS without `privateKey` it is a plain
+// rename: strictHostKeyChecking is only read for SSH-key auth.
 func TestApply_EEGitClone_Issue38(t *testing.T) {
 	in := `id: qa_auth_ee_clone
 namespace: qa.global
@@ -24,7 +24,6 @@ tasks:
   - id: t
     type: io.kestra.plugin.git.Clone
     url: https://github.com/kestra-io/scripts
-    strictHostKeyChecking: true
 `
 	out, warnings := applyWithWarningDetails(t, in)
 	if out != want {
@@ -32,6 +31,32 @@ tasks:
 	}
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings (git.Clone needs no auth), got %+v", warnings)
+	}
+}
+
+// With `privateKey` the task authenticates over SSH, where the EE copy verified
+// host keys by default and git.Clone does not: strictHostKeyChecking: true is
+// pinned, next to `url`.
+func TestApply_EEGitClone_PinsStrictHostKeyCheckingWithPrivateKey(t *testing.T) {
+	in := `id: f
+namespace: n
+tasks:
+  - id: clone
+    type: io.kestra.plugin.ee.git.Clone
+    url: git@github.com:org/repo.git
+    privateKey: "{{ secret('SSH_KEY') }}"
+`
+	want := `id: f
+namespace: n
+tasks:
+  - id: clone
+    type: io.kestra.plugin.git.Clone
+    url: git@github.com:org/repo.git
+    strictHostKeyChecking: true
+    privateKey: "{{ secret('SSH_KEY') }}"
+`
+	if out := apply(t, in); out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
 }
 
@@ -99,7 +124,8 @@ namespace: n
 tasks:
   - id: clone
     type: io.kestra.plugin.ee.git.Clone
-    url: https://github.com/org/repo
+    url: git@github.com:org/repo.git
+    privateKey: "{{ secret('SSH_KEY') }}"
 pluginDefaults:
   - type: io.kestra.plugin.ee.git.Clone
     values:
@@ -110,8 +136,9 @@ namespace: n
 tasks:
   - id: clone
     type: io.kestra.plugin.git.Clone
-    url: https://github.com/org/repo
+    url: git@github.com:org/repo.git
     strictHostKeyChecking: true
+    privateKey: "{{ secret('SSH_KEY') }}"
 pluginDefaults:
   - type: io.kestra.plugin.git.Clone
     values:
@@ -126,7 +153,8 @@ namespace: n
 tasks:
   - id: clone
     type: io.kestra.plugin.ee.git.Clone
-    url: https://github.com/org/repo
+    url: git@github.com:org/repo.git
+    privateKey: "{{ secret('SSH_KEY') }}"
 pluginDefaults:
   - type: io.kestra.plugin.ee.git.Clone
     values:

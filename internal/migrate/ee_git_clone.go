@@ -15,7 +15,9 @@ import (
 // differing default: the EE copy verified SSH host keys
 // (`strictHostKeyChecking` defaulted to true) while git.Clone does not, so
 // `strictHostKeyChecking: true` is pinned when absent — the same idea as
-// pinning `fallback: WAIT` on converted worker groups.
+// pinning `fallback: WAIT` on converted worker groups. Only on a task with
+// `privateKey`: both plugins read the property only when configuring the
+// SSH-key transport, so on any other task the pin would be a no-op line.
 //
 // Gated post-step in Apply, skipped under --stay-v1-compatible: the EE type
 // still exists on v1.3 (plugin-ee-git 1.7.2), whose git.Clone
@@ -56,7 +58,7 @@ func migrateEEGitClone(doc *yaml.Node) {
 			return
 		}
 		setStringValue(m, "type", "io.kestra.plugin.git.Clone")
-		if defaultEntries[m] || defaultsSetStrict || mappingValue(m, "strictHostKeyChecking") != nil {
+		if defaultEntries[m] || defaultsSetStrict || mappingValue(m, "privateKey") == nil || mappingValue(m, "strictHostKeyChecking") != nil {
 			return
 		}
 		pair := []*yaml.Node{

@@ -1,4 +1,4 @@
-# kestra-io/kestra2-flow-migration#38: ee.git.Clone was removed in plugin-ee-git 2.2.1 → OSS git.Clone
+# kestra-io/kestra2-flow-migration#38: ee.git.Clone was removed in plugin-ee-git 2.2.1 → OSS git.Clone (strictHostKeyChecking pinned only with privateKey)
 id: ee_git_clone
 namespace: company.team
 
@@ -6,5 +6,10 @@ tasks:
   - id: clone
     type: io.kestra.plugin.git.Clone
     url: https://github.com/kestra-io/scripts
-    strictHostKeyChecking: true
     branch: main
+
+  - id: clone_ssh
+    type: io.kestra.plugin.git.Clone
+    url: git@github.com:kestra-io/scripts.git
+    strictHostKeyChecking: true
+    privateKey: "{{ secret('GIT_SSH_KEY') }}"
