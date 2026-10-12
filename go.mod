@@ -1,6 +1,6 @@
 module github.com/kestra-io/kestra2-flow-migration
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/pmezard/go-difflib v1.0.0
