@@ -11,8 +11,10 @@ tasks:
 triggers:
   - id: flow_condition
     type: io.kestra.plugin.core.trigger.Flow
-    dependsOn:
-      - when: "{{ hasRetryAttempt == true }}"
+    conditions:
+      - type: io.kestra.plugin.core.condition.HasRetryAttempt
+        in:
+          - FAILED
 
 # extend:
 #   shortDescription: "This flow trigger executes the flow based on the HasRetryAttempt condition."

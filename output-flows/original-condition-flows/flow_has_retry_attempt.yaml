@@ -9,5 +9,5 @@ tasks:
 triggers:
   - id: after_flaky
     type: io.kestra.plugin.core.trigger.Flow
-    dependsOn:
-      - when: "{{ hasRetryAttempt == true }}"
+    conditions:
+      - type: io.kestra.plugin.core.condition.HasRetryAttempt

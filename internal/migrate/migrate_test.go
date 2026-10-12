@@ -1329,19 +1329,88 @@ triggers:
 	}
 }
 
-func TestApply_FlowTrigger_HasRetryAttempt(t *testing.T) {
-	in := `
-id: test-flow
-namespace: company.team
-triggers:
-  - id: after_flaky
+// HasRetryAttempt has no 2.0 equivalent: a Flow trigger `when` is rendered on
+// the upstream execution, whose `tasks` map carries each task's final state but
+// no attempts, and `hasRetryAttempt` was never a variable — the old rewrite
+// `{{ hasRetryAttempt == true }}` fails every evaluation, so the trigger
+// silently never fired. Every shape is left untouched and flagged instead.
+func TestApply_HasRetryAttempt_LeftForManualRewrite(t *testing.T) {
+	cases := map[string]string{
+		"Flow trigger": `
+  - id: t
     type: io.kestra.plugin.core.trigger.Flow
     conditions:
       - type: io.kestra.plugin.core.condition.HasRetryAttempt
-`
-	out, _ := applyWithWarnings(t, in)
-	if !strings.Contains(out, `when: "{{ hasRetryAttempt == true }}"`) {
-		t.Errorf("missing hasRetryAttempt when clause, got:\n%s", out)
+        in: [FAILED]
+`,
+		"Flow trigger, Not": `
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.Not
+        conditions:
+          - type: io.kestra.plugin.core.condition.HasRetryAttempt
+`,
+		"Flow trigger, Or": `
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.Or
+        conditions:
+          - type: io.kestra.plugin.core.condition.HasRetryAttempt
+          - type: io.kestra.plugin.core.condition.ExecutionNamespace
+            namespace: company
+            comparison: PREFIX
+`,
+		"Flow trigger, shared with preconditions": `
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.HasRetryAttemptCondition
+    preconditions:
+      flows:
+        - flowId: upstream
+          namespace: company.team
+`,
+		"Schedule": `
+  - id: t
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Weekend
+      - type: io.kestra.plugin.core.condition.HasRetryAttempt
+`,
+	}
+	for name, trigger := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:` + trigger
+			out, warnings := applyWithWarningDetails(t, in)
+			if strings.Contains(out, "hasRetryAttempt") {
+				t.Errorf("emitted the undefined `hasRetryAttempt` variable, got:\n%s", out)
+			}
+			if !strings.Contains(out, "HasRetryAttempt") {
+				t.Errorf("the HasRetryAttempt condition must be left for manual rewrite, got:\n%s", out)
+			}
+			if !HasV2Incompatible(warnings) {
+				t.Errorf("expected a v2-incompatible warning, got: %v", warnings)
+			}
+			var specific bool
+			for _, w := range warningMessages(warnings) {
+				if strings.Contains(w, "HasRetryAttempt") && strings.Contains(w, "taskrun.attemptsCount") {
+					specific = true
+				}
+			}
+			if !specific {
+				t.Errorf("expected a HasRetryAttempt warning pointing at `taskrun.attemptsCount`, got: %v", warningMessages(warnings))
+			}
+		})
 	}
 }
 
@@ -1883,7 +1952,7 @@ triggers:
 }
 
 // A single-child Not wrapping a when-producing condition (ExecutionNamespace
-// prefix/suffix, ExecutionOutputs, HasRetryAttempt) collapses into a single
+// prefix/suffix, ExecutionOutputs) collapses into a single
 // `when:` clause negated with `not (...)`.
 func TestApply_FlowTrigger_NotWrappingExecutionNamespacePrefix(t *testing.T) {
 	in := `
@@ -1938,7 +2007,7 @@ triggers:
 }
 
 // An Or wrapper combines when-convertible inner conditions (ExecutionFlow,
-// ExecutionNamespace prefix/suffix/exact, ExecutionOutputs, HasRetryAttempt)
+// ExecutionNamespace prefix/suffix/exact, ExecutionOutputs)
 // into a single `(A) or (B)` Pebble expression. A sibling ExecutionStatus
 // still contributes the `states:` filter at the dependsOn entry.
 func TestApply_FlowTrigger_OrWrapper_MixedInner(t *testing.T) {
@@ -2376,14 +2445,15 @@ triggers:
     cron: "0 9 * * *"
     conditions:
       - type: io.kestra.plugin.core.condition.WeekendCondition
-      - type: io.kestra.plugin.core.condition.HasRetryAttemptCondition
+      - type: io.kestra.plugin.core.condition.DayWeekCondition
+        dayOfWeek: SATURDAY
 `
 	out, warnings := applyWithWarnings(t, in)
-	want := `when: "{{ (isWeekend(trigger.date)) and (hasRetryAttempt == true) }}"`
+	want := `when: "{{ (isWeekend(trigger.date)) and (dayOfWeek(trigger.date) == 'SATURDAY') }}"`
 	if !strings.Contains(out, want) {
 		t.Errorf("missing expected `when:` expression, got:\n%s", out)
 	}
-	if strings.Contains(out, "WeekendCondition") || strings.Contains(out, "HasRetryAttemptCondition") {
+	if strings.Contains(out, "WeekendCondition") || strings.Contains(out, "DayWeekCondition") {
 		t.Error("old condition types should have been consumed by the rewrite")
 	}
 	if len(warnings) != 0 {

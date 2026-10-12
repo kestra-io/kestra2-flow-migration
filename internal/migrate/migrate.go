@@ -1577,10 +1577,38 @@ func init() {
 		"PublicHoliday":   convertPublicHolidayCondition,
 		"DateTimeBetween": convertDateTimeBetweenCondition,
 		"TimeBetween":     convertTimeBetweenCondition,
-		"HasRetryAttempt": convertHasRetryAttemptCondition,
 		"Not":             convertNotCondition,
 		"Or":              convertOrCondition,
 	}
+}
+
+// usesCondition reports whether a trigger's `conditions` / `scheduleConditions`
+// contain a condition of the given base type, at any depth of `Not` / `Or` /
+// `MultipleCondition` nesting.
+func usesCondition(t *yaml.Node, base string) bool {
+	var walk func(list *yaml.Node) bool
+	walk = func(list *yaml.Node) bool {
+		if list == nil || list.Kind != yaml.SequenceNode {
+			return false
+		}
+		for _, c := range list.Content {
+			if c.Kind != yaml.MappingNode {
+				continue
+			}
+			if conditionBaseName(stringValue(c, "type")) == base || walk(mappingValue(c, "conditions")) {
+				return true
+			}
+			if inner := mappingValue(c, "conditions"); inner != nil && inner.Kind == yaml.MappingNode {
+				for i := 1; i < len(inner.Content); i += 2 {
+					if conditionBaseName(stringValue(inner.Content[i], "type")) == base {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	return walk(mappingValue(t, "conditions")) || walk(mappingValue(t, "scheduleConditions"))
 }
 
 // convertCondition dispatches a single condition node to its converter.
@@ -1864,10 +1892,6 @@ func parseWholeHour(s string) (int, string, bool) {
 	return h, zone, true
 }
 
-func convertHasRetryAttemptCondition(_ *yaml.Node) (string, bool) {
-	return "hasRetryAttempt == true", true
-}
-
 // convertNotCondition rewrites a v1 `Not` wrapper faithfully: Kestra 1.x
 // evaluated the inner `conditions` as an AND and negated the result, so
 // `Not([A, B])` is exactly `not (A and B)`. Some authors wrote multi-child
@@ -1970,6 +1994,16 @@ func rewriteOneTrigger(t *yaml.Node) []string {
 	}
 
 	var warnings []string
+
+	// HasRetryAttempt is never rewritten (none of the converters accept it), so
+	// the trigger is left as-is with the generic warning below; this one says
+	// why, since "rewrite as `when`" has no answer for it.
+	if usesCondition(t, "HasRetryAttempt") {
+		warnings = append(warnings, fmt.Sprintf(
+			"%s uses a HasRetryAttempt condition, which has no 2.0 equivalent: a trigger `when` cannot see task retry attempts "+
+				"(`hasRetryAttempt` is not a variable, so such a `when` never fires); react inside the upstream flow instead, "+
+				"where a task's attempts are `{{ taskrun.attemptsCount }}`", triggerID))
+	}
 
 	// For Flow triggers, `conditions` entries and `preconditions` map onto
 	// `dependsOn` (plus optional `window:`). rewriteFlowTriggerToDependsOn
@@ -2092,8 +2126,6 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 			return "", false
 		}
 		return unwrapPebble(expr), true
-	case "HasRetryAttempt":
-		return "hasRetryAttempt == true", true
 	}
 	return "", false
 }
@@ -2115,7 +2147,7 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 //     using startsWith/endsWith (prefix/suffix)
 //   - ExecutionLabels     → entry `labels:`
 //   - ExecutionOutputs    → entry `when:` clause
-//   - HasRetryAttempt     → entry `when:` clause `hasRetryAttempt == true`
+//   - HasRetryAttempt     → never rewritten (no 2.0 equivalent, see rewriteOneTrigger)
 //   - Not (single child)  → entry `when:` clause `not (<child_when>)`, where
 //     the child is one of the when-producing conditions
 //
@@ -2320,8 +2352,6 @@ func collectFlowConditionFields(conds *yaml.Node, preconditionsPresent bool) (fl
 				return cc, false
 			}
 			cc.sharedWhenParts = append(cc.sharedWhenParts, unwrapPebble(expr))
-		case "HasRetryAttempt":
-			cc.sharedWhenParts = append(cc.sharedWhenParts, "hasRetryAttempt == true")
 		case "Not":
 			inner := mappingValue(c, "conditions")
 			if inner == nil || inner.Kind != yaml.SequenceNode || len(inner.Content) != 1 {
