@@ -15,7 +15,7 @@ type rule func(*yaml.Node) error
 
 var rules = []rule{
 	renameInputNameToID,
-	renameInputTypes,
+	renameInputAndOutputTypes,
 	renameMaxAttemptToMaxAttempts,
 	renamePauseDelayToPauseDuration,
 	normalizeFetchType,
@@ -479,20 +479,33 @@ func renameInputNameToID(doc *yaml.Node) error {
 	return nil
 }
 
-// renameInputTypes renames deprecated input type values:
-// BOOLEAN → BOOL, ENUM → SELECT. (flows-changes.md: Input type BOOLEAN/ENUM removed)
+// renameInputAndOutputTypes renames deprecated input and flow output type values:
+// BOOLEAN → BOOL, ENUM → SELECT. (flows-changes.md: Input type BOOLEAN/ENUM removed,
+// Flow output type BOOLEAN/ENUM removed)
 //
 // The server rejects a BOOLEAN under `onResume` just as loudly as at the root
-// ("Validation error: Invalid type: BOOLEAN"), hence inputDefinitions.
-func renameInputTypes(doc *yaml.Node) error {
-	inputDefinitions(doc, func(item *yaml.Node) {
+// ("Validation error: Invalid type: BOOLEAN"), hence inputDefinitions. Flow
+// outputs are typed with the same enum, so only the root `outputs:` list is
+// renamed too: a Subflow's `outputs` is a mapping of values, not definitions.
+func renameInputAndOutputTypes(doc *yaml.Node) error {
+	rename := func(item *yaml.Node) {
 		switch stringValue(item, "type") {
 		case "BOOLEAN":
 			setStringValue(item, "type", "BOOL")
 		case "ENUM":
 			setStringValue(item, "type", "SELECT")
 		}
-	})
+	}
+	inputDefinitions(doc, rename)
+	if root := docRoot(doc); root != nil && root.Kind == yaml.MappingNode {
+		if outputs := mappingValue(root, "outputs"); outputs != nil && outputs.Kind == yaml.SequenceNode {
+			for _, item := range outputs.Content {
+				if item.Kind == yaml.MappingNode {
+					rename(item)
+				}
+			}
+		}
+	}
 	return nil
 }
 

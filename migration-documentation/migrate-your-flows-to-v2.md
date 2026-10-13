@@ -56,7 +56,7 @@ This applies all automated migration rules and writes the results to `v2-flows/`
 
 The tool handles the following v1 → v2 changes:
 
-- **Input renames**: `name` → `id`, `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`
+- **Input renames**: `name` → `id`, `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`; the two type renames also apply to root-level flow `outputs`
 - **Property renames**: `maxAttempt` → `maxAttempts`, `taskDefaults` → `pluginDefaults`, `scheduleConditions` → `conditions`
 - **Pause task**: `delay` → `pauseDuration`
 - **fetchType normalization**: `fetchType: STORE` → `store: true`

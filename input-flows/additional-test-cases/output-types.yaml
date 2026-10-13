@@ -1,0 +1,16 @@
+# kestra2-flow-migration#44: flow outputs share the input type enum, so BOOLEAN/ENUM are rejected there too
+id: output_types
+namespace: migration.flows
+
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: done
+
+outputs:
+  - id: succeeded
+    type: BOOLEAN
+    value: true
+  - id: color
+    type: ENUM
+    value: red

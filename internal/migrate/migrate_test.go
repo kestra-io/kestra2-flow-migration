@@ -94,7 +94,7 @@ tasks:
 	}
 }
 
-// ── Rule: renameInputTypes ────────────────────────────────────────────────────
+// ── Rule: renameInputAndOutputTypes ───────────────────────────────────────────
 
 func TestApply_RenameInputType_NestedOnResume(t *testing.T) {
 	out := apply(t, `id: f
@@ -266,6 +266,72 @@ inputs:
 	out := apply(t, in)
 	if !strings.Contains(out, "type: STRING") || !strings.Contains(out, "type: INT") {
 		t.Error("non-deprecated input types should be preserved")
+	}
+}
+
+func TestApply_RenameOutputTypes(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: true
+  - id: color
+    type: ENUM
+    value: red
+  - id: name
+    type: STRING
+    value: kestra
+`
+	want := strings.NewReplacer("type: BOOLEAN", "type: BOOL", "type: ENUM", "type: SELECT").Replace(in)
+	if out := apply(t, in); out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
+	}
+}
+
+// Only the root `outputs:` list declares flow outputs; a plugin property that
+// happens to be called `outputs` is the plugin's own data and is left alone.
+func TestApply_RenameOutputTypes_OnlyRootOutputs(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: custom
+    type: io.example.Custom
+    outputs:
+      - id: ok
+        type: BOOLEAN
+`
+	out := apply(t, in)
+	if !strings.Contains(out, "type: BOOLEAN") {
+		t.Errorf("a task property named outputs was renamed; got:\n%s", out)
+	}
+}
+
+func TestApply_RenameOutputTypes_StayV1Compatible(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: ok
+    type: BOOLEAN
+    value: true
+`
+	out, _, err := Apply([]byte(in), StayV1Compatible())
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if !strings.Contains(string(out), "type: BOOL\n") {
+		t.Errorf("BOOL is valid on v1.3, so the rename should also apply; got:\n%s", out)
 	}
 }
 
