@@ -631,9 +631,15 @@ var typeRenames = map[string]string{
 	"io.kestra.core.tasks.flows.Sequential":       "io.kestra.plugin.core.flow.Sequential",
 	"io.kestra.core.tasks.flows.WorkingDirectory": "io.kestra.plugin.core.flow.WorkingDirectory",
 	"io.kestra.core.tasks.flows.Dag":              "io.kestra.plugin.core.flow.Dag",
+	"io.kestra.core.tasks.flows.AllowFailure":     "io.kestra.plugin.core.flow.AllowFailure",
+	"io.kestra.core.tasks.flows.Worker":           "io.kestra.plugin.core.flow.WorkingDirectory",
 	// Debug / Log
 	"io.kestra.core.tasks.debugs.Echo":   "io.kestra.plugin.core.log.Log",
 	"io.kestra.core.tasks.debugs.Return": "io.kestra.plugin.core.debug.Return",
+	"io.kestra.core.tasks.log.Log":       "io.kestra.plugin.core.log.Log",
+	"io.kestra.core.tasks.log.Fetch":     "io.kestra.plugin.kestra.logs.Fetch",
+	// Templating
+	"io.kestra.core.tasks.templating.TemplatedTask": "io.kestra.plugin.core.templating.TemplatedTask",
 	// States → KV
 	"io.kestra.core.tasks.states.Get":    "io.kestra.plugin.core.kv.Get",
 	"io.kestra.core.tasks.states.Set":    "io.kestra.plugin.core.kv.Set",
@@ -645,8 +651,18 @@ var typeRenames = map[string]string{
 	"io.kestra.core.tasks.storages.Purge":          "io.kestra.plugin.core.execution.PurgeExecutions",
 	"io.kestra.core.tasks.storages.LocalFiles":     "io.kestra.plugin.core.flow.WorkingDirectory",
 	"io.kestra.core.tasks.storages.PurgeExecution": "io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles",
+	// Storage tasks v1.3 still accepted through @Plugin aliases
+	"io.kestra.core.tasks.storages.Concat":           "io.kestra.plugin.core.storage.Concat",
+	"io.kestra.core.tasks.storages.DeduplicateItems": "io.kestra.plugin.core.storage.DeduplicateItems",
+	"io.kestra.core.tasks.storages.Delete":           "io.kestra.plugin.core.storage.Delete",
+	"io.kestra.core.tasks.storages.FilterItems":      "io.kestra.plugin.core.storage.FilterItems",
+	"io.kestra.core.tasks.storages.Reverse":          "io.kestra.plugin.core.storage.Reverse",
+	"io.kestra.core.tasks.storages.Size":             "io.kestra.plugin.core.storage.Size",
+	"io.kestra.core.tasks.storages.Split":            "io.kestra.plugin.core.storage.Split",
 	// Execution
 	"io.kestra.core.tasks.executions.Fail": "io.kestra.plugin.core.execution.Fail",
+	// Labels was also only reachable through its v1.3 @Plugin alias
+	"io.kestra.core.tasks.executions.Labels": "io.kestra.plugin.core.execution.Labels",
 	// Triggers
 	"io.kestra.core.models.triggers.types.Schedule": "io.kestra.plugin.core.trigger.Schedule",
 	"io.kestra.core.models.triggers.types.Flow":     "io.kestra.plugin.core.trigger.Flow",
@@ -1308,6 +1324,10 @@ var removedTypes = map[string]string{
 	"io.kestra.plugin.git.Push":                         "deprecated; use io.kestra.plugin.git.SyncFlows or Git API tasks",
 	"io.kestra.plugin.scripts.nashorn.Eval":             "removed; migrate to GraalJS or other script tasks",
 	"io.kestra.plugin.scripts.nashorn.FileTransform":    "removed; migrate to GraalJS or other script tasks",
+	// Old io.kestra.core.* paths of Count and Toggle: v1.3 still accepted them
+	// as @Plugin aliases, and 2.0 removed the aliases along with the types.
+	"io.kestra.core.tasks.executions.Counts": "removed; use KV Store or custom logic",
+	"io.kestra.core.tasks.trigger.Toggle":    "removed; use the API or SDK to enable/disable triggers",
 	// ForEach / ForEachItem / EachSequential / EachParallel are removed in v2 and
 	// replaced by io.kestra.plugin.core.flow.Loop. The rewrite is non-trivial
 	// (expression renames, declared outputs, AllowFailure → transmitFailed), so it

@@ -1,0 +1,32 @@
+id: v13-core-task-aliases
+namespace: company.team
+description: |
+  Task types written with the io.kestra.core.tasks.* paths that v1.3 still
+  accepted through @Plugin aliases. 2.0 dropped the aliases.
+inputs:
+  - id: file
+    type: FILE
+tasks:
+  - id: start
+    type: io.kestra.plugin.core.log.Log
+    message: "starting export"
+  - id: split
+    type: io.kestra.plugin.core.storage.Split
+    from: "{{ inputs.file }}"
+    rows: 1000
+  - id: concat
+    type: io.kestra.plugin.core.storage.Concat
+    files: "{{ outputs.split.uris }}"
+  - id: size
+    type: io.kestra.plugin.core.storage.Size
+    uri: "{{ outputs.concat.uri }}"
+  - id: label
+    type: io.kestra.plugin.core.execution.Labels
+    labels:
+      size: "{{ outputs.size.size }}"
+  - id: optional_cleanup
+    type: io.kestra.plugin.core.flow.AllowFailure
+    tasks:
+      - id: delete
+        type: io.kestra.plugin.core.storage.Delete
+        uri: "{{ outputs.concat.uri }}"

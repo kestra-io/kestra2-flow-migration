@@ -2212,6 +2212,162 @@ tasks:
 	}
 }
 
+// #50: the flow from the issue. `--check` reported it v2-compatible, and 2.0.6
+// rejected it with `Invalid type: io.kestra.core.tasks.log.Log`. Only the
+// three `type:` values change; the rest of the file is untouched.
+func TestApply_RenameTypes_Issue50(t *testing.T) {
+	in := `id: daily_export
+namespace: company.team
+inputs:
+  - id: file
+    type: FILE
+tasks:
+  - id: hello
+    type: io.kestra.core.tasks.log.Log
+    message: "starting export"
+  - id: split
+    type: io.kestra.core.tasks.storages.Split
+    from: "{{ inputs.file }}"
+    rows: 1000
+  - id: labels
+    type: io.kestra.core.tasks.executions.Labels
+    labels:
+      source: export
+`
+	want := `id: daily_export
+namespace: company.team
+inputs:
+  - id: file
+    type: FILE
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: "starting export"
+  - id: split
+    type: io.kestra.plugin.core.storage.Split
+    from: "{{ inputs.file }}"
+    rows: 1000
+  - id: labels
+    type: io.kestra.plugin.core.execution.Labels
+    labels:
+      source: export
+`
+	out, warnings := applyWithWarningDetails(t, in)
+	if out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %+v", warnings)
+	}
+}
+
+// Every plugin alias v1.3 still declared (`@Plugin(aliases = …)` in
+// core/src/main/java on releases/v1.3.x, conditions excepted: they go through
+// the trigger-conditions rewrite). 2.0 dropped the aliases, so each one must be
+// renamed to a type 2.0 knows, or flagged as v2-incompatible when its target is
+// removed too (want ""). A new alias left out of typeRenames and removedTypes
+// fails here. io.kestra.plugin.core.flow.WaitFor and io.kestra.plugin.fs.http.Trigger
+// are left out: 2.0.6 still accepts them. (#50)
+func TestApply_V13PluginAliases_AreRenamedOrFlagged(t *testing.T) {
+	cases := map[string]string{
+		"io.kestra.core.models.triggers.types.Flow":      "io.kestra.plugin.core.trigger.Flow",
+		"io.kestra.core.models.triggers.types.Schedule":  "io.kestra.plugin.core.trigger.Schedule",
+		"io.kestra.core.models.triggers.types.Webhook":   "io.kestra.plugin.core.trigger.Webhook",
+		"io.kestra.core.tasks.debugs.Echo":               "io.kestra.plugin.core.log.Log",
+		"io.kestra.core.tasks.debugs.Return":             "io.kestra.plugin.core.debug.Return",
+		"io.kestra.core.tasks.executions.Counts":         "",
+		"io.kestra.core.tasks.executions.Fail":           "io.kestra.plugin.core.execution.Fail",
+		"io.kestra.core.tasks.executions.Labels":         "io.kestra.plugin.core.execution.Labels",
+		"io.kestra.core.tasks.flows.AllowFailure":        "io.kestra.plugin.core.flow.AllowFailure",
+		"io.kestra.core.tasks.flows.Dag":                 "io.kestra.plugin.core.flow.Dag",
+		"io.kestra.core.tasks.flows.EachParallel":        "",
+		"io.kestra.core.tasks.flows.EachSequential":      "",
+		"io.kestra.core.tasks.flows.Flow":                "io.kestra.plugin.core.flow.Subflow",
+		"io.kestra.core.tasks.flows.ForEachItem":         "",
+		"io.kestra.core.tasks.flows.If":                  "io.kestra.plugin.core.flow.If",
+		"io.kestra.core.tasks.flows.Parallel":            "io.kestra.plugin.core.flow.Parallel",
+		"io.kestra.core.tasks.flows.Pause":               "io.kestra.plugin.core.flow.Pause",
+		"io.kestra.core.tasks.flows.Sequential":          "io.kestra.plugin.core.flow.Sequential",
+		"io.kestra.core.tasks.flows.Subflow":             "io.kestra.plugin.core.flow.Subflow",
+		"io.kestra.core.tasks.flows.Switch":              "io.kestra.plugin.core.flow.Switch",
+		"io.kestra.core.tasks.flows.Template":            "io.kestra.plugin.core.flow.Subflow",
+		"io.kestra.core.tasks.flows.Worker":              "io.kestra.plugin.core.flow.WorkingDirectory",
+		"io.kestra.core.tasks.flows.WorkingDirectory":    "io.kestra.plugin.core.flow.WorkingDirectory",
+		"io.kestra.core.tasks.log.Fetch":                 "io.kestra.plugin.kestra.logs.Fetch",
+		"io.kestra.core.tasks.log.Log":                   "io.kestra.plugin.core.log.Log",
+		"io.kestra.core.tasks.states.Delete":             "io.kestra.plugin.core.kv.Delete",
+		"io.kestra.core.tasks.states.Get":                "io.kestra.plugin.core.kv.Get",
+		"io.kestra.core.tasks.states.Set":                "io.kestra.plugin.core.kv.Set",
+		"io.kestra.core.tasks.storages.Concat":           "io.kestra.plugin.core.storage.Concat",
+		"io.kestra.core.tasks.storages.DeduplicateItems": "io.kestra.plugin.core.storage.DeduplicateItems",
+		"io.kestra.core.tasks.storages.Delete":           "io.kestra.plugin.core.storage.Delete",
+		"io.kestra.core.tasks.storages.FilterItems":      "io.kestra.plugin.core.storage.FilterItems",
+		"io.kestra.core.tasks.storages.LocalFiles":       "io.kestra.plugin.core.flow.WorkingDirectory",
+		"io.kestra.core.tasks.storages.Purge":            "io.kestra.plugin.core.execution.PurgeExecutions",
+		"io.kestra.core.tasks.storages.PurgeExecution":   "io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles",
+		"io.kestra.core.tasks.storages.Reverse":          "io.kestra.plugin.core.storage.Reverse",
+		"io.kestra.core.tasks.storages.Size":             "io.kestra.plugin.core.storage.Size",
+		"io.kestra.core.tasks.storages.Split":            "io.kestra.plugin.core.storage.Split",
+		"io.kestra.core.tasks.templating.TemplatedTask":  "io.kestra.plugin.core.templating.TemplatedTask",
+		"io.kestra.core.tasks.trigger.Toggle":            "",
+		"io.kestra.plugin.core.storage.Purge":            "io.kestra.plugin.core.execution.PurgeExecutions",
+		"io.kestra.plugin.core.storage.PurgeExecution":   "io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles",
+		"io.kestra.plugin.fs.http.Download":              "io.kestra.plugin.core.http.Download",
+		"io.kestra.plugin.fs.http.Request":               "io.kestra.plugin.core.http.Request",
+	}
+	for alias, want := range cases {
+		t.Run(alias, func(t *testing.T) {
+			in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: task
+    type: ` + alias + `
+`
+			out, warnings := applyWithWarningDetails(t, in)
+			if want == "" {
+				for _, w := range warnings {
+					if w.V2Incompatible && strings.Contains(w.Message, alias) {
+						return
+					}
+				}
+				t.Errorf("expected a v2-incompatible warning for %s, got %+v", alias, warnings)
+				return
+			}
+			if strings.Contains(out, alias) {
+				t.Errorf("output still contains %s:\n%s", alias, out)
+			}
+			if !strings.Contains(out, "type: "+want+"\n") {
+				t.Errorf("expected type %s, got:\n%s", want, out)
+			}
+		})
+	}
+}
+
+// The old alias must also be renamed inside flowable tasks and errors, not just
+// at the root of `tasks:`.
+func TestApply_RenameTypes_OldCoreTaskAliasesNested(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+tasks:
+  - id: parallel
+    type: io.kestra.core.tasks.flows.Parallel
+    tasks:
+      - id: log
+        type: io.kestra.core.tasks.log.Log
+        message: nested
+errors:
+  - id: size
+    type: io.kestra.core.tasks.storages.Size
+    uri: "{{ outputs.log.uri }}"
+`
+	out := apply(t, in)
+	if strings.Contains(out, "io.kestra.core.tasks.") {
+		t.Errorf("output still contains an io.kestra.core.tasks.* type:\n%s", out)
+	}
+}
+
 // log.Log has no `format` property (it takes `message`), so renaming only the
 // type yields a flow 2.0 rejects on save: `Unrecognized field "format"`.
 // (kestra-ee#11390)
@@ -4536,6 +4692,23 @@ namespace: dev
 tasks:
   - id: fetch
     type: io.kestra.plugin.core.log.Fetch
+`
+	out, warnings := applyWithWarnings(t, in)
+	if !strings.Contains(out, "io.kestra.plugin.kestra.logs.Fetch") {
+		t.Fatalf("expected type rename, got:\n%s", out)
+	}
+	if !hasWarningContaining(warnings, "requires SDK authentication") {
+		t.Errorf("expected SDK auth warning after rename, got %v", warnings)
+	}
+}
+
+// Same as above for the v1.3 io.kestra.core.tasks.log.Fetch alias. (#50)
+func TestDetectSdkAuthAfterOldCoreLogFetchRename(t *testing.T) {
+	in := `id: logs
+namespace: dev
+tasks:
+  - id: fetch
+    type: io.kestra.core.tasks.log.Fetch
 `
 	out, warnings := applyWithWarnings(t, in)
 	if !strings.Contains(out, "io.kestra.plugin.kestra.logs.Fetch") {
