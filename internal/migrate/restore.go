@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"bytes"
 	"sort"
 
 	"gopkg.in/yaml.v3"
@@ -18,6 +19,12 @@ import (
 // indent, `- ` prefixes, and any comments between entries are preserved from
 // the original. Subtrees whose value changed are recursed into so nested
 // unchanged entries are still restored.
+//
+// Inside a changed subtree the two documents can sit at different columns:
+// a compact sequence (`- id:` at the parent key's column) is re-emitted by
+// yaml.v3 one level deeper. Restored bytes are therefore shifted to the
+// migrated node's column, so they line up with the migrated siblings they
+// end up next to instead of producing a mixed-indent, unparseable item.
 func restoreUnchangedBlocks(original, migrated []byte) []byte {
 	var oDoc, mDoc yaml.Node
 	if err := yaml.Unmarshal(original, &oDoc); err != nil {
@@ -88,13 +95,18 @@ func restoreUnchangedBlocks(original, migrated []byte) []byte {
 				// marker — would drop it and corrupt the sequence. Recurse
 				// instead, leaving the structurally-correct migrated line.
 				markersMatch := lineHasSeqMarker(migrated, mPairStart, mKey) == lineHasSeqMarker(original, oPairStart, oKey)
+				var replace []byte
+				shifted := false
 				if semEq(oVal, mVal) && markersMatch {
 					oPairEndT := trimTrailingBlankLines(original, oPairStart, oPairEnd)
+					replace, shifted = shiftIndent(original[oPairStart:oPairEndT], mKey.Column-oKey.Column)
+				}
+				if shifted {
 					mPairEndT := trimTrailingBlankLines(migrated, mPairStart, mPairEnd)
 					edits = append(edits, edit{
 						start:   mPairStart,
 						end:     mPairEndT,
-						replace: original[oPairStart:oPairEndT],
+						replace: replace,
 					})
 				} else {
 					walk(oVal, mVal, oPairEnd, mPairEnd)
@@ -123,13 +135,18 @@ func restoreUnchangedBlocks(original, migrated []byte) []byte {
 				} else {
 					oItemEnd = oEnd
 				}
+				var replace []byte
+				shifted := false
 				if semEq(oItem, mItem) {
 					oItemEndT := trimTrailingBlankLines(original, oItemStart, oItemEnd)
+					replace, shifted = shiftIndent(original[oItemStart:oItemEndT], mItem.Column-oItem.Column)
+				}
+				if shifted {
 					mItemEndT := trimTrailingBlankLines(migrated, mItemStart, mItemEnd)
 					edits = append(edits, edit{
 						start:   mItemStart,
 						end:     mItemEndT,
-						replace: original[oItemStart:oItemEndT],
+						replace: replace,
 					})
 				} else {
 					walk(oItem, mItem, oItemEnd, mItemEnd)
@@ -255,6 +272,44 @@ func lineHasSeqMarker(content []byte, lineStartOff int, n *yaml.Node) bool {
 		}
 	}
 	return false
+}
+
+// shiftIndent moves every line of b by delta columns: it prepends delta spaces
+// when delta > 0 and strips -delta leading spaces when delta < 0. Every line
+// moves by the same amount, so relative indentation (nested blocks, block
+// scalar content) is unchanged. It reports false when a non-blank line has
+// fewer than -delta leading spaces, in which case b cannot be moved left and
+// the caller must not restore it. Whitespace-only lines are shifted as far as
+// they go, since inside a block scalar their spaces past the indent are content.
+func shiftIndent(b []byte, delta int) ([]byte, bool) {
+	if delta == 0 {
+		return b, true
+	}
+	out := make([]byte, 0, len(b)+max(delta, 0)*bytes.Count(b, []byte("\n")))
+	for len(b) > 0 {
+		n := bytes.IndexByte(b, '\n') + 1
+		if n == 0 {
+			n = len(b)
+		}
+		line := b[:n]
+		b = b[n:]
+		if len(bytes.TrimRight(line, "\r\n")) == 0 {
+			out = append(out, line...)
+			continue
+		}
+		if delta > 0 {
+			out = append(out, bytes.Repeat([]byte(" "), delta)...)
+			out = append(out, line...)
+			continue
+		}
+		spaces := len(line) - len(bytes.TrimLeft(line, " "))
+		blank := len(bytes.TrimSpace(line)) == 0
+		if spaces < -delta && !blank {
+			return nil, false
+		}
+		out = append(out, line[min(spaces, -delta):]...)
+	}
+	return out, true
 }
 
 // trimTrailingBlankLines returns a new end offset with trailing whitespace-only

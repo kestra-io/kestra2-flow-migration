@@ -439,28 +439,13 @@ func marshalYAML(doc *yaml.Node) ([]byte, error) {
 // references, so matching every `inputs:` key would rename properties there.
 func inputDefinitions(doc *yaml.Node, fn func(*yaml.Node)) {
 	visit := func(seq *yaml.Node) {
-		if seq == nil || seq.Kind != yaml.SequenceNode {
-			return
-		}
-		for _, item := range seq.Content {
-			if item.Kind != yaml.MappingNode {
-				continue
-			}
+		forEachMappingItem(seq, func(item *yaml.Node) {
 			fn(item)
-			if stringValue(item, "type") != formInputType {
-				continue
+			if stringValue(item, "type") == formInputType {
+				// FORM nesting is rejected by validation, so this is a single level.
+				forEachMappingItem(mappingValue(item, "inputs"), fn)
 			}
-			// FORM nesting is rejected by validation, so this is a single level.
-			children := mappingValue(item, "inputs")
-			if children == nil || children.Kind != yaml.SequenceNode {
-				continue
-			}
-			for _, child := range children.Content {
-				if child.Kind == yaml.MappingNode {
-					fn(child)
-				}
-			}
-		}
+		})
 	}
 	if root := docRoot(doc); root != nil && root.Kind == yaml.MappingNode {
 		visit(mappingValue(root, "inputs"))
@@ -468,6 +453,20 @@ func inputDefinitions(doc *yaml.Node, fn func(*yaml.Node)) {
 	walkMappings(doc, func(m *yaml.Node) {
 		visit(mappingValue(m, "onResume"))
 	})
+}
+
+// forEachMappingItem calls fn on every mapping item of seq, skipping scalar
+// items. A nil or non-sequence seq (the key is absent, or holds a scalar or a
+// mapping) is ignored.
+func forEachMappingItem(seq *yaml.Node, fn func(*yaml.Node)) {
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		return
+	}
+	for _, item := range seq.Content {
+		if item.Kind == yaml.MappingNode {
+			fn(item)
+		}
+	}
 }
 
 // renameInputNameToID renames the `name:` field to `id:` on every input
@@ -498,13 +497,7 @@ func renameInputAndOutputTypes(doc *yaml.Node) error {
 	}
 	inputDefinitions(doc, rename)
 	if root := docRoot(doc); root != nil && root.Kind == yaml.MappingNode {
-		if outputs := mappingValue(root, "outputs"); outputs != nil && outputs.Kind == yaml.SequenceNode {
-			for _, item := range outputs.Content {
-				if item.Kind == yaml.MappingNode {
-					rename(item)
-				}
-			}
-		}
+		forEachMappingItem(mappingValue(root, "outputs"), rename)
 	}
 	return nil
 }

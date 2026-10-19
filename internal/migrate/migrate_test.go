@@ -3904,6 +3904,134 @@ tasks:
 	}
 }
 
+// A rule changing one value inside a compact sequence item (`- id:` at the
+// parent key's column) makes yaml.v3 re-emit that item one level deeper. The
+// unchanged siblings restored from the original must follow it to the new
+// column; copying them at their original column would leave the item with
+// mixed indentation, which no longer parses.
+func TestApply_CompactSequence_ChangedItemStaysParseable(t *testing.T) {
+	cases := map[string]struct{ in, want string }{
+		"outputs, changed key not first": {
+			in: `id: test-flow
+namespace: company.team
+tasks:
+- id: log
+  type: io.kestra.plugin.core.log.Log
+  message: hi
+outputs:
+- id: ok
+  type: BOOLEAN
+  value: true
+- id: name
+  type: STRING
+  value: kestra
+`,
+			want: `id: test-flow
+namespace: company.team
+tasks:
+- id: log
+  type: io.kestra.plugin.core.log.Log
+  message: hi
+outputs:
+  - id: ok
+    type: BOOL
+    value: true
+  - id: name
+    type: STRING
+    value: kestra
+`,
+		},
+		"outputs, changed key first": {
+			in: `id: test-flow
+namespace: company.team
+tasks:
+- id: log
+  type: io.kestra.plugin.core.log.Log
+  message: hi
+outputs:
+- type: ENUM
+  id: color
+  value: red
+`,
+			want: `id: test-flow
+namespace: company.team
+tasks:
+- id: log
+  type: io.kestra.plugin.core.log.Log
+  message: hi
+outputs:
+  - type: SELECT
+    id: color
+    value: red
+`,
+		},
+		"inputs with a block scalar sibling": {
+			in: `id: test-flow
+namespace: company.team
+inputs:
+- id: flag
+  type: BOOLEAN
+  description: |
+    Line one
+      indented line
+tasks:
+- id: log
+  type: io.kestra.plugin.core.log.Log
+  message: hi
+`,
+			want: `id: test-flow
+namespace: company.team
+inputs:
+  - id: flag
+    type: BOOL
+    description: |
+      Line one
+        indented line
+tasks:
+- id: log
+  type: io.kestra.plugin.core.log.Log
+  message: hi
+`,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			out := apply(t, tc.in)
+			var doc yaml.Node
+			if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+				t.Fatalf("migrated output does not parse: %v\n%s", err, out)
+			}
+			if out != tc.want {
+				t.Errorf("got:\n%s\nwant:\n%s", out, tc.want)
+			}
+		})
+	}
+}
+
+func TestShiftIndent(t *testing.T) {
+	cases := []struct {
+		name  string
+		in    string
+		delta int
+		want  string
+		ok    bool
+	}{
+		{"no shift", "- id: a\n  x: 1\n", 0, "- id: a\n  x: 1\n", true},
+		{"right keeps empty lines", "- id: a\n\n  x: |\n    y\n", 2, "  - id: a\n\n    x: |\n      y\n", true},
+		{"left", "    a: 1\n      b: 2\n", -2, "  a: 1\n    b: 2\n", true},
+		{"left on whitespace-only line", "    a: 1\n \n", -2, "  a: 1\n\n", true},
+		{"left past a marker", "- a: 1\n", -2, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := shiftIndent([]byte(tc.in), tc.delta)
+			if ok != tc.ok || (ok && string(got) != tc.want) {
+				t.Errorf("shiftIndent(%q, %d) = %q, %v; want %q, %v", tc.in, tc.delta, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
 // Under StayV1Compatible, v1 trigger `conditions:` must be left intact (v1.3
 // still parses it) while v2-only `when:` / `dependsOn:` rewrites are skipped.
 // Other v1→v2 renames that were aliased in v1.3 (e.g. maxAttempt → maxAttempts)

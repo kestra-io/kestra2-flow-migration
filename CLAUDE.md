@@ -263,6 +263,7 @@ Idempotent by construction: a disabled flow has no live incompatible construct l
 - **Type renames:** `io.kestra.core.*` → `io.kestra.plugin.core.*` (conditions, triggers, runners, serdes, storage tasks)
 - **Removed features:** Templates → Subflow, Listeners → Flow trigger, `LocalFiles`/`outputDir` → `inputFiles`/`outputFiles`, `runner` → `taskRunner`, State Store → KV Store
 - **Input changes:** `name` → `id`, `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`
+- **Flow output changes:** root `outputs:` types `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`
 - **Property renames:** `scheduleConditions` → `conditions`, `maxAttempt` → `maxAttempts`, `taskDefaults` → `pluginDefaults`
 - **Property removals:** `Subflow.outputs`, `Schedule.backfills`, `PurgeKV.expiredOnly`, `AbstractTrigger.minLogLevel`
 - **EE-only changes:** documented in `migration-documentation/flows-changes.md` under the EE section
