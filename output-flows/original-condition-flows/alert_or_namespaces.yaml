@@ -12,7 +12,7 @@ triggers:
   - id: listen
     type: io.kestra.plugin.core.trigger.Flow
     dependsOn:
-      - when: "{{ (trigger.namespace startsWith 'company.product') or (trigger.flowId == 'cleanup' and trigger.namespace == 'company.system') }}"
+      - when: "{{ (flow.namespace | startsWith('company.product')) or (flow.id == 'cleanup' and flow.namespace == 'company.system') }}"
         states:
           - FAILED
           - WARNING
