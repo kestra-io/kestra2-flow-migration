@@ -1298,7 +1298,7 @@ triggers:
         comparison: PREFIX
 `
 	out, warnings := applyWithWarnings(t, in)
-	if !strings.Contains(out, `when: "{{ trigger.namespace startsWith 'company' }}"`) {
+	if !strings.Contains(out, `when: "{{ flow.namespace | startsWith('company') }}"`) {
 		t.Errorf("missing expected `when:` clause, got:\n%s", out)
 	}
 	if strings.Contains(out, "conditions:") {
@@ -1326,7 +1326,7 @@ triggers:
         prefix: true
 `
 	out, _ := applyWithWarnings(t, in)
-	if !strings.Contains(out, `when: "{{ trigger.namespace startsWith 'company.analytics' }}"`) {
+	if !strings.Contains(out, `when: "{{ flow.namespace | startsWith('company.analytics') }}"`) {
 		t.Errorf("missing expected startsWith clause, got:\n%s", out)
 	}
 }
@@ -1346,7 +1346,7 @@ triggers:
         comparison: SUFFIX
 `
 	out, _ := applyWithWarnings(t, in)
-	if !strings.Contains(out, `when: "{{ trigger.namespace endsWith 'prod' }}"`) {
+	if !strings.Contains(out, `when: "{{ flow.namespace | endsWith('prod') }}"`) {
 		t.Errorf("missing expected endsWith clause, got:\n%s", out)
 	}
 }
@@ -1903,7 +1903,7 @@ triggers:
               value: "{{ labels.some == 'label' }}"
 `
 	out, warnings := applyWithWarnings(t, in)
-	want := `when: "{{ (trigger.namespace startsWith 'io.kestra.tests') and (labels.some == 'label') }}"`
+	want := `when: "{{ (flow.namespace | startsWith('io.kestra.tests')) and (labels.some == 'label') }}"`
 	if !strings.Contains(out, want) {
 		t.Errorf("missing expected `when:` clause, got:\n%s", out)
 	}
@@ -2035,7 +2035,7 @@ triggers:
             comparison: PREFIX
 `
 	out, warnings := applyWithWarnings(t, in)
-	if !strings.Contains(out, `when: "{{ not (trigger.namespace startsWith 'company.analytics') }}"`) {
+	if !strings.Contains(out, `when: "{{ not (flow.namespace | startsWith('company.analytics')) }}"`) {
 		t.Errorf("missing expected negated when clause, got:\n%s", out)
 	}
 	if strings.Contains(out, "conditions:") {
@@ -2047,7 +2047,7 @@ triggers:
 }
 
 // Not wrapping ExecutionFlow inverts the flow match and becomes a negated
-// when-clause: `not (trigger.flowId == 'X' and trigger.namespace == 'Y')`.
+// when-clause: `not (flow.id == 'X' and flow.namespace == 'Y')`.
 func TestApply_FlowTrigger_NotWrappingExecutionFlow(t *testing.T) {
 	in := `
 id: test-flow
@@ -2063,7 +2063,7 @@ triggers:
             namespace: company.team
 `
 	out, warnings := applyWithWarnings(t, in)
-	want := `when: "{{ not (trigger.flowId == 'upstream' and trigger.namespace == 'company.team') }}"`
+	want := `when: "{{ not (flow.id == 'upstream' and flow.namespace == 'company.team') }}"`
 	if !strings.Contains(out, want) {
 		t.Errorf("missing expected `when:` expression, got:\n%s", out)
 	}
@@ -2096,7 +2096,7 @@ triggers:
             namespace: company.system
 `
 	out, warnings := applyWithWarnings(t, in)
-	wantWhen := `when: "{{ (trigger.namespace startsWith 'company.product') or (trigger.flowId == 'cleanup' and trigger.namespace == 'company.system') }}"`
+	wantWhen := `when: "{{ (flow.namespace | startsWith('company.product')) or (flow.id == 'cleanup' and flow.namespace == 'company.system') }}"`
 	if !strings.Contains(out, wantWhen) {
 		t.Errorf("missing expected `when:` expression, got:\n%s", out)
 	}
@@ -5511,5 +5511,143 @@ func TestDetectMissingRequiredPropertyCorpusFlow(t *testing.T) {
 	got := requiredPropertyWarnings(warnings)
 	if len(got) != 1 || !got[0].V2Incompatible || !strings.Contains(got[0].Message, "`run_job`") {
 		t.Errorf("expected one v2-incompatible warning on run_job, got %+v", warnings)
+	}
+}
+
+// TestFlowTriggerWhenIsRenderable guards every emit site at once: `startsWith` /
+// `endsWith` are Pebble filters, so the bare operator form (a NAME token with
+// no `|` before it) is a parse error at trigger time. Flow validation does not
+// evaluate Pebble, so only a test like this catches a regression here.
+func TestFlowTriggerWhenIsRenderable(t *testing.T) {
+	operatorForm := regexp.MustCompile(`[^|]\s+(startsWith|endsWith)\s+'`)
+	// A Flow trigger `when` is rendered against the upstream execution, where
+	// `trigger` is undefined: the upstream flow is `flow`.
+	triggerVar := regexp.MustCompile(`when:.*trigger\.(namespace|flowId)`)
+
+	cases := map[string]string{
+		"ExecutionNamespace PREFIX": `
+id: prefix
+namespace: qa
+tasks:
+  - id: noop
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionNamespace
+        namespace: company
+        comparison: PREFIX
+`,
+		"ExecutionNamespace SUFFIX": `
+id: suffix
+namespace: qa
+tasks:
+  - id: noop
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionNamespace
+        namespace: prod
+        comparison: SUFFIX
+`,
+		"Not around a prefix namespace": `
+id: negated
+namespace: qa
+tasks:
+  - id: noop
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.Not
+        conditions:
+          - type: io.kestra.plugin.core.condition.ExecutionNamespace
+            namespace: company.analytics
+            comparison: PREFIX
+`,
+		"preconditions.where STARTS_WITH / ENDS_WITH": `
+id: where
+namespace: qa
+tasks:
+  - id: noop
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      where:
+        - filters:
+            - field: NAMESPACE
+              type: STARTS_WITH
+              value: company
+            - field: FLOW_ID
+              type: ENDS_WITH
+              value: _daily
+`,
+		"Or around a flow and a prefix namespace": `
+id: either
+namespace: qa
+tasks:
+  - id: noop
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.Or
+        conditions:
+          - type: io.kestra.plugin.core.condition.ExecutionFlow
+            namespace: company.system
+            flowId: cleanup
+          - type: io.kestra.plugin.core.condition.ExecutionNamespace
+            namespace: company.product
+            comparison: PREFIX
+`,
+		"conditions prefix shared across preconditions.flows": `
+id: shared
+namespace: qa
+tasks:
+  - id: noop
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+triggers:
+  - id: t
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionNamespace
+        namespace: company
+        comparison: PREFIX
+    preconditions:
+      flows:
+        - flowId: upstream
+          namespace: company.team
+`,
+	}
+
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			out := apply(t, in)
+			if !strings.Contains(out, "when:") {
+				t.Fatalf("expected a `when:` clause, got:\n%s", out)
+			}
+			if operatorForm.MatchString(out) {
+				t.Errorf("emitted the operator form instead of the filter form, got:\n%s", out)
+			}
+			if triggerVar.MatchString(out) {
+				t.Errorf("`when` reads `trigger.*`, undefined on the upstream execution; use `flow.namespace` / `flow.id`, got:\n%s", out)
+			}
+			if !strings.Contains(out, "flow.namespace") {
+				t.Errorf("expected the upstream namespace as `flow.namespace`, got:\n%s", out)
+			}
+		})
 	}
 }
