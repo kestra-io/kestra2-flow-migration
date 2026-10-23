@@ -1,0 +1,43 @@
+# kestra2-flow-migration#59: calendar conditions with a custom date need manual migration
+id: calendar_custom_date
+namespace: migration.flows
+
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: done
+
+triggers:
+  - id: custom_day
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.DayWeek
+        dayOfWeek: MONDAY
+        date: "2026-01-01T00:00:00Z"
+  - id: custom_weekend
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Weekend
+        date: "{{ trigger.date | dateAdd(1, 'DAYS') }}"
+  - id: day_before_holiday
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.PublicHoliday
+        country: FR
+        date: "{{ trigger.date | dateAdd(1, 'DAYS') }}"
+  - id: nested_custom_date
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Not
+        conditions:
+          - type: io.kestra.plugin.core.condition.PublicHoliday
+            country: FR
+            date: "{{ trigger.date | dateAdd(1, 'DAYS') }}"
+  - id: default_date
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    when: "{{ (dayOfWeek(trigger.date) == 'MONDAY') and (isWeekend(trigger.date)) and (isPublicHoliday(trigger.date, 'FR')) }}"

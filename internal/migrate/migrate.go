@@ -1812,6 +1812,9 @@ func convertExpressionCondition(c *yaml.Node) (string, bool) {
 }
 
 func convertDayWeekCondition(c *yaml.Node) (string, bool) {
+	if hasCustomConditionDate(c) {
+		return "", false
+	}
 	day := stringValue(c, "dayOfWeek")
 	if day == "" {
 		return "", false
@@ -1820,6 +1823,9 @@ func convertDayWeekCondition(c *yaml.Node) (string, bool) {
 }
 
 func convertDayWeekInMonthCondition(c *yaml.Node) (string, bool) {
+	if hasCustomConditionDate(c) {
+		return "", false
+	}
 	day := stringValue(c, "dayOfWeek")
 	pos := stringValue(c, "dayInMonth")
 	if day == "" || pos == "" {
@@ -1828,11 +1834,17 @@ func convertDayWeekInMonthCondition(c *yaml.Node) (string, bool) {
 	return fmt.Sprintf("isDayWeekInMonth(trigger.date, '%s', '%s')", day, pos), true
 }
 
-func convertWeekendCondition(_ *yaml.Node) (string, bool) {
+func convertWeekendCondition(c *yaml.Node) (string, bool) {
+	if hasCustomConditionDate(c) {
+		return "", false
+	}
 	return "isWeekend(trigger.date)", true
 }
 
 func convertPublicHolidayCondition(c *yaml.Node) (string, bool) {
+	if hasCustomConditionDate(c) {
+		return "", false
+	}
 	country := stringValue(c, "country")
 	sub := stringValue(c, "subDivision")
 	if country == "" {
@@ -1858,13 +1870,7 @@ func convertDateTimeBetweenCondition(c *yaml.Node) (string, bool) {
 	after := stringValue(c, "after")
 	before := stringValue(c, "before")
 
-	// A custom `date` makes the condition compare against something other than the
-	// trigger date, and the rewrite has nowhere to put it. Leaving it to the warning
-	// keeps the loud failure it already had, rather than emitting an expression that
-	// evaluates cleanly against the wrong instant. `{{ trigger.date }}` is v1's
-	// documented default (and what its own examples spell out), so it is the same
-	// instant the rewrite compares and needs no special handling.
-	if date := stringValue(c, "date"); date != "" && !isTriggerDateExpression(date) {
+	if hasCustomConditionDate(c) {
 		return "", false
 	}
 
@@ -1943,6 +1949,17 @@ func isTriggerDateExpression(s string) bool {
 	return strings.TrimSpace(s[2:len(s)-2]) == "trigger.date"
 }
 
+// A custom `date` makes the condition compare against something other than the
+// trigger date, and the rewrite has nowhere to put it. Leaving it to the warning
+// keeps the loud failure it already had, rather than emitting an expression that
+// evaluates cleanly against the wrong instant. `{{ trigger.date }}` is v1's
+// documented default (and what its own examples spell out), so it is the same
+// instant the rewrite compares and needs no special handling.
+func hasCustomConditionDate(c *yaml.Node) bool {
+	date := stringValue(c, "date")
+	return date != "" && !isTriggerDateExpression(date)
+}
+
 // isTimeOfDayOnly reports whether a boundary is a time of day with no date part,
 // e.g. "08:00:00" or "18:00:00+02:00", as opposed to a full instant.
 func isTimeOfDayOnly(s string) bool {
@@ -1977,7 +1994,7 @@ func isTimeOfDayOnly(s string) bool {
 //
 // A custom `date` is left as a warning, like DateTimeBetween's.
 func convertTimeBetweenCondition(c *yaml.Node) (string, bool) {
-	if date := stringValue(c, "date"); date != "" && !isTriggerDateExpression(date) {
+	if hasCustomConditionDate(c) {
 		return "", false
 	}
 	after := stringValue(c, "after")
