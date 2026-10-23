@@ -673,6 +673,155 @@ triggers:
 	}
 }
 
+func TestApply_RewriteScheduleConditions_CalendarDate(t *testing.T) {
+	conditions := []struct {
+		name       string
+		properties string
+		when       string
+	}{
+		{"DayWeek", "        dayOfWeek: MONDAY\n", "dayOfWeek(trigger.date) == 'MONDAY'"},
+		{"DayWeekInMonth", "        dayOfWeek: MONDAY\n        dayInMonth: FIRST\n", "isDayWeekInMonth(trigger.date, 'MONDAY', 'FIRST')"},
+		{"Weekend", "", "isWeekend(trigger.date)"},
+		{"PublicHoliday", "        country: FR\n        subDivision: ARA\n", "isPublicHoliday(trigger.date, 'FR', 'ARA')"},
+	}
+	dates := []struct {
+		name   string
+		value  string
+		custom bool
+	}{
+		{"literal", "2026-01-01T00:00:00Z", true},
+		{"pebble", "{{ trigger.date | dateAdd(1, 'DAYS') }}", true},
+		{"default", "{{ trigger.date }}", false},
+		{"compact default", "{{trigger.date}}", false},
+		{"spaced default", "  {{   trigger.date  }} ", false},
+		{"absent", "", false},
+	}
+	for _, condition := range conditions {
+		t.Run(condition.name, func(t *testing.T) {
+			for _, date := range dates {
+				t.Run(date.name, func(t *testing.T) {
+					in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.` + condition.name + "\n" + condition.properties
+					if date.value != "" {
+						in += "        date: \"" + date.value + "\"\n"
+					}
+					out, warnings := applyWithWarnings(t, in)
+					if date.custom {
+						if out != in {
+							t.Errorf("custom date condition must be preserved, got:\n%s", out)
+						}
+						if !hasWarningContaining(warnings, "daily uses trigger.conditions") {
+							t.Errorf("expected trigger.conditions warning, got: %v", warnings)
+						}
+						return
+					}
+					if !strings.Contains(out, `when: "{{ `+condition.when+` }}"`) || strings.Contains(out, "conditions:") {
+						t.Errorf("expected condition to convert to `when:`, got:\n%s", out)
+					}
+					if len(warnings) != 0 {
+						t.Errorf("expected no warnings, got: %v", warnings)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestApply_RewriteTriggerConditions_CalendarCustomDateWithConvertibleSibling(t *testing.T) {
+	for name, trigger := range map[string]string{
+		"Schedule": `    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    conditions:
+      - type: io.kestra.plugin.core.condition.Expression
+        expression: "{{ true }}"
+`,
+		"Flow": `    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionFlow
+        namespace: company.team
+        flowId: upstream
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+` + trigger + `      - type: io.kestra.plugin.core.condition.DayWeek
+        dayOfWeek: MONDAY
+        date: "2026-01-01T00:00:00Z"
+`
+			out, warnings := applyWithWarnings(t, in)
+			if out != in {
+				t.Errorf("the trigger must be preserved, with no partial when or dependsOn, got:\n%s", out)
+			}
+			if !hasWarningContaining(warnings, "daily uses trigger.conditions") {
+				t.Errorf("expected trigger.conditions warning, got: %v", warnings)
+			}
+		})
+	}
+}
+
+func TestApply_RewriteScheduleConditions_CalendarCustomDateNested(t *testing.T) {
+	conditions := []struct {
+		name       string
+		properties string
+	}{
+		{"DayWeek", "            dayOfWeek: MONDAY\n"},
+		{"DayWeekInMonth", "            dayOfWeek: MONDAY\n            dayInMonth: FIRST\n"},
+		{"Weekend", ""},
+		{"PublicHoliday", "            country: FR\n"},
+		{"DateTimeBetween", "            after: \"2025-12-31T23:59:59Z\"\n"},
+	}
+	for _, wrapper := range []string{"Not", "Or"} {
+		t.Run(wrapper, func(t *testing.T) {
+			for _, condition := range conditions {
+				t.Run(condition.name, func(t *testing.T) {
+					in := `
+id: test-flow
+namespace: company.team
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 11 * * *"
+    scheduleConditions:
+      - type: io.kestra.plugin.core.condition.Expression
+        expression: "{{ true }}"
+    conditions:
+      - type: io.kestra.plugin.core.condition.` + wrapper + `
+        conditions:
+          - type: io.kestra.plugin.core.condition.Expression
+            expression: "{{ true }}"
+          - type: io.kestra.plugin.core.condition.` + condition.name + `
+            date: "{{ trigger.date | dateAdd(1, 'DAYS') }}"
+` + condition.properties
+					out, warnings := applyWithWarningDetails(t, in)
+					if out != in {
+						t.Errorf("the entire trigger must be preserved, got:\n%s", out)
+					}
+					if len(warnings) != 2 {
+						t.Fatalf("expected a warning for each condition source, got: %v", warnings)
+					}
+					for i, key := range []string{"scheduleConditions", "conditions"} {
+						w := warnings[i]
+						if !strings.Contains(w.Message, "daily uses trigger."+key) || w.Code != CodeTriggerConditions || !w.V2Incompatible || w.DocURL != docTriggerConditions {
+							t.Errorf("expected manual migration warning for %s, got: %+v", key, w)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestApply_RewriteScheduleConditions_DayWeekInMonth(t *testing.T) {
 	in := `
 id: test-flow

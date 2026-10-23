@@ -240,6 +240,8 @@ The variables available inside `when` depend on the trigger type:
 
 ### Schedule / Webhook / HTTP triggers
 
+`DayWeek`, `DayWeekInMonth`, `Weekend`, and `PublicHoliday` conditions with a custom `date` are left untouched and flagged for manual migration, like `DateTimeBetween`. An absent `date` or `{{ trigger.date }}` (ignoring surrounding and inner whitespace) converts as usual. If any condition cannot be converted, including inside `Not` or `Or`, the trigger's entire condition list is preserved and no partial `when` is emitted.
+
 | Old `conditions` shape | New |
 |---|---|
 | `Expression` (body or variable) | `when: "<pebble>"` directly on the trigger |
