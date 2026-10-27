@@ -89,6 +89,13 @@ them. Without it every warning carries its own docs link, as before.`,
 				opts = append(opts, migrate.DisableV2Incompatible())
 			}
 
+			contents := make([][]byte, len(flows))
+			for i, f := range flows {
+				contents[i] = f.Content
+			}
+			corpus := migrate.ExtractFlowCorpus(contents)
+			opts = append(opts, migrate.WithCorpus(corpus))
+
 			if check {
 				return runCheck(flows, opts, summary, &exitCode)
 			}
