@@ -40,6 +40,13 @@ type Option func(*applyOptions)
 type applyOptions struct {
 	stayV1Compatible      bool
 	disableV2Incompatible bool
+	corpus                FlowCorpus
+}
+
+// WithCorpus supplies knowledge of other flows processed in the same run,
+// allowing test suite validation to cross-reference tasks inside a ForEach.
+func WithCorpus(c FlowCorpus) Option {
+	return func(o *applyOptions) { o.corpus = c }
 }
 
 // StayV1Compatible skips migration rules whose output is not valid on a v1.3
@@ -108,6 +115,7 @@ const (
 	CodeStateToKV            Code = "state-to-kv"
 	CodeRequiredProperty     Code = "required-property"
 	CodeHTTPTriggerSSL       Code = "http-trigger-ssl"
+	CodeTestSuiteForEach     Code = "test-suite-foreach"
 )
 
 // codeLabels are the short human labels the grouped summary prints. They are
@@ -127,6 +135,7 @@ var codeLabels = map[Code]string{
 	CodeIonRead:              "`read()` on a binary ION output needs `fromIon()`",
 	CodeStateToKV:            "State Store task rewritten to kv.*, check its semantics",
 	CodeRequiredProperty:     "task missing a property mandatory in v2",
+	CodeTestSuiteForEach:     "unit test suite references a ForEach task or output",
 }
 
 // Label returns the short human label for a family, falling back to the raw
@@ -282,6 +291,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 	warnings = append(warnings, sslWarnings...)
 	// Detect removed types after all rename/rewrite rules have run.
 	warnings = append(warnings, detectRemovedTypes(&doc)...)
+	warnings = append(warnings, detectTestSuiteWarnings(&doc, o.corpus)...)
 
 	after, err := marshalYAML(&doc)
 	if err != nil {
