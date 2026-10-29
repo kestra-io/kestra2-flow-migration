@@ -107,6 +107,7 @@ const (
 	CodeIonRead              Code = "ion-read"
 	CodeStateToKV            Code = "state-to-kv"
 	CodeRequiredProperty     Code = "required-property"
+	CodeHTTPTriggerSSL       Code = "http-trigger-ssl"
 )
 
 // codeLabels are the short human labels the grouped summary prints. They are
@@ -212,6 +213,8 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 			return nil, nil, err
 		}
 	}
+	// v1.3 already supports `options.ssl`, so this runs on both paths.
+	sslWarnings := v2Incompatible(migrateHTTPTriggerSSLOptions(&doc), DocMigrationGuide, CodeHTTPTriggerSSL)
 
 	// Rewrite v1 trigger conditions → v2 `when:` / `dependsOn:` first. Mutates
 	// doc. Returns warnings for shapes the rewriter cannot safely handle.
@@ -276,6 +279,7 @@ func Apply(content []byte, opts ...Option) ([]byte, []Warning, error) {
 		}
 	}
 	warnings = append(warnings, stateWarnings...)
+	warnings = append(warnings, sslWarnings...)
 	// Detect removed types after all rename/rewrite rules have run.
 	warnings = append(warnings, detectRemovedTypes(&doc)...)
 
@@ -3052,6 +3056,97 @@ func migrateHTTPBasicAuth(doc *yaml.Node) error {
 		)
 	})
 	return nil
+}
+
+// migrateHTTPTriggerSSLOptions moves an HTTP trigger's removed `sslOptions` to
+// `options.ssl`. (flows-changes.md: HTTP task properties restructured)
+func migrateHTTPTriggerSSLOptions(doc *yaml.Node) []string {
+	root := docRoot(doc)
+	if root == nil || root.Kind != yaml.MappingNode {
+		return nil
+	}
+	var messages []string
+	forEachMappingItem(mappingValue(root, "triggers"), func(trigger *yaml.Node) {
+		typ := stringValue(trigger, "type")
+		if typ != "io.kestra.plugin.core.http.Trigger" && typ != "io.kestra.plugin.fs.http.Trigger" {
+			return
+		}
+		var legacyKey, legacy *yaml.Node
+		for i := 0; i+1 < len(trigger.Content); i += 2 {
+			if trigger.Content[i].Value == "sslOptions" {
+				legacyKey, legacy = trigger.Content[i], trigger.Content[i+1]
+				break
+			}
+		}
+		if legacy == nil {
+			return
+		}
+		opts := mappingValue(trigger, "options")
+		var ssl *yaml.Node
+		if opts != nil && opts.Kind == yaml.MappingNode {
+			ssl = mappingValue(opts, "ssl")
+		}
+		// Editing a node shared through an anchor or merge key would change the
+		// TLS settings of every trigger that reuses it, and a merged `options.ssl`
+		// is invisible here, so it could be overridden against v1.3 precedence.
+		// Moving or removing `sslOptions` can put an alias before its anchor or
+		// leave it dangling, so any anchor or alias on it is left for a manual fix.
+		if isSharedNode(trigger) || legacyKey.Anchor != "" || hasAnchorOrAlias(legacy) || isSharedNode(opts) || isSharedNode(ssl) ||
+			(opts != nil && opts.Tag != "!!null" && opts.Kind != yaml.MappingNode) {
+			messages = append(messages, fmt.Sprintf("line %d: HTTP trigger `sslOptions` was left in place because the trigger, `sslOptions` or `options` is shared through a YAML anchor, alias or merge key, or `options` is not a mapping — 2.0 rejects the flow on save; move it to `options.ssl` by hand", legacy.Line))
+			return
+		}
+		if legacy.Tag == "!!null" {
+			removeKey(trigger, "sslOptions")
+			return
+		}
+		if opts == nil {
+			opts = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			trigger.Content = append(trigger.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: "options", Tag: "!!str"},
+				opts,
+			)
+		} else if opts.Tag == "!!null" {
+			opts.Kind = yaml.MappingNode
+			opts.Tag = "!!map"
+			opts.Value = ""
+			opts.Style = 0
+		}
+		// v1.3 falls back to sslOptions only when options.ssl is null.
+		if ssl == nil {
+			opts.Content = append(opts.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: "ssl", Tag: "!!str"},
+				legacy,
+			)
+		} else if ssl.Tag == "!!null" || (ssl.Kind == yaml.AliasNode && ssl.Alias.Tag == "!!null") {
+			*ssl = *legacy
+		}
+		removeKey(trigger, "sslOptions")
+	})
+	return messages
+}
+
+// hasAnchorOrAlias reports whether n or any node below it is anchored or an
+// alias.
+func hasAnchorOrAlias(n *yaml.Node) bool {
+	if n.Anchor != "" || n.Kind == yaml.AliasNode {
+		return true
+	}
+	for _, c := range n.Content {
+		if hasAnchorOrAlias(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSharedNode reports whether n is anchored or pulls in keys through a `<<`
+// merge.
+func isSharedNode(n *yaml.Node) bool {
+	if n == nil {
+		return false
+	}
+	return n.Anchor != "" || (n.Kind == yaml.MappingNode && mappingValue(n, "<<") != nil)
 }
 
 // removeDeprecatedHTTPOptions removes deprecated properties from any task's
