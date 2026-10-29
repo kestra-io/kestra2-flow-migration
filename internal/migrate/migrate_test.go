@@ -3648,6 +3648,376 @@ tasks:
 	}
 }
 
+// ── Rule: migrateHTTPTriggerSSLOptions ────────────────────────────────────────
+
+func TestApply_MigrateHTTPTriggerSSLOptions(t *testing.T) {
+	cases := []struct {
+		name string
+		typ  string
+		in   string
+		want string
+	}{
+		{
+			name: "create options",
+			in:   "    sslOptions:\n      insecureTrustAllCertificates: true\n",
+			want: "    options:\n      ssl:\n        insecureTrustAllCertificates: true\n",
+		},
+		{
+			name: "merge options in order",
+			in:   "    options:\n      followRedirects: false\n      readTimeout: PT30S\n    sslOptions:\n      insecureTrustAllCertificates: true\n",
+			want: "    options:\n      followRedirects: false\n      readTimeout: PT30S\n      ssl:\n        insecureTrustAllCertificates: true\n",
+		},
+		{
+			name: "modern ssl wins",
+			in:   "    sslOptions:\n      insecureTrustAllCertificates: true\n    options:\n      followRedirects: false\n      ssl:\n        insecureTrustAllCertificates: false\n      readTimeout: PT30S\n",
+			want: "    options:\n      followRedirects: false\n      ssl:\n        insecureTrustAllCertificates: false\n      readTimeout: PT30S\n",
+		},
+		{
+			name: "empty modern ssl wins",
+			in:   "    sslOptions:\n      insecureTrustAllCertificates: true\n    options:\n      ssl: {}\n",
+			want: "    options:\n      ssl: {}\n",
+		},
+		{
+			name: "null modern ssl uses fallback",
+			in:   "    options:\n      ssl: null\n      followRedirects: false\n    sslOptions:\n      insecureTrustAllCertificates: true\n",
+			want: "    options:\n      ssl:\n        insecureTrustAllCertificates: true\n      followRedirects: false\n",
+		},
+		{
+			name: "legacy trigger alias",
+			typ:  "io.kestra.plugin.fs.http.Trigger",
+			in:   "    sslOptions:\n      insecureTrustAllCertificates: true\n",
+			want: "    options:\n      ssl:\n        insecureTrustAllCertificates: true\n",
+		},
+		{
+			name: "empty mapping",
+			in:   "    sslOptions: {}\n",
+			want: "    options:\n      ssl: {}\n",
+		},
+		{
+			name: "null legacy ssl",
+			in:   "    sslOptions: null\n",
+		},
+		{
+			name: "bare legacy ssl",
+			in:   "    sslOptions:\n",
+		},
+		{
+			name: "null legacy ssl preserves options",
+			in:   "    options:\n      ssl: {}\n      followRedirects: false\n    sslOptions: ~\n",
+			want: "    options:\n      ssl: {}\n      followRedirects: false\n",
+		},
+		{
+			name: "null options",
+			in:   "    options: null\n    sslOptions:\n      insecureTrustAllCertificates: true\n",
+			want: "    options:\n      ssl:\n        insecureTrustAllCertificates: true\n",
+		},
+		{
+			name: "empty options mapping",
+			in:   "    options: {}\n    sslOptions: {}\n",
+			want: "    options: {ssl: {}}\n",
+		},
+		{
+			name: "scalar legacy ssl",
+			in:   "    sslOptions: invalid\n",
+			want: "    options:\n      ssl: invalid\n",
+		},
+		{
+			name: "empty string legacy ssl",
+			in:   "    sslOptions: \"\"\n",
+			want: "    options:\n      ssl: \"\"\n",
+		},
+		{
+			name: "sequence legacy ssl",
+			in:   "    sslOptions: [invalid]\n",
+			want: "    options:\n      ssl: [invalid]\n",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			typ := tt.typ
+			if typ == "" {
+				typ = "io.kestra.plugin.core.http.Trigger"
+			}
+			prefix := "id: test\nnamespace: test\ntriggers:\n  - id: http\n    type: " + typ + "\n    uri: https://example.com\n"
+			for _, stayV1 := range []bool{false, true} {
+				name := "v2"
+				var opts []Option
+				if stayV1 {
+					name = "stay v1 compatible"
+					opts = append(opts, StayV1Compatible())
+				}
+				t.Run(name, func(t *testing.T) {
+					out, warnings := applyWithWarningDetails(t, prefix+tt.in, opts...)
+					if out != prefix+tt.want {
+						t.Errorf("unexpected output:\n%s\nwant:\n%s", out, prefix+tt.want)
+					}
+					if len(warnings) != 0 {
+						t.Errorf("unexpected warnings: %v", warnings)
+					}
+					second, _ := applyWithWarningDetails(t, out, opts...)
+					if second != out {
+						t.Errorf("second migration changed output:\n%s", second)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestApply_MigrateHTTPTriggerSSLOptions_Scope(t *testing.T) {
+	in := `id: test
+namespace: test
+variables:
+  type: io.kestra.plugin.core.http.Trigger
+  sslOptions: {insecureTrustAllCertificates: false}
+  triggers:
+    - type: io.kestra.plugin.core.http.Trigger
+      sslOptions: {}
+tasks:
+  - id: request
+    type: io.kestra.plugin.core.http.Request
+    sslOptions: {}
+    body:
+      type: io.kestra.plugin.core.http.Trigger
+      sslOptions: {}
+      triggers:
+        - type: io.kestra.plugin.core.http.Trigger
+          sslOptions: {}
+  - id: download
+    type: io.kestra.plugin.core.http.Download
+    sslOptions: {}
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    sslOptions: {}
+triggers:
+  - id: other
+    type: io.kestra.plugin.core.trigger.Webhook
+    sslOptions: {}
+  - id: malformed
+    type: io.kestra.plugin.core.http.Trigger
+    options: invalid
+    sslOptions: {}
+  - id: modern
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: {}
+  - id: http
+    type: io.kestra.plugin.core.http.Trigger
+    body:
+      type: io.kestra.plugin.core.http.Trigger
+      sslOptions: {}
+    sslOptions: {insecureTrustAllCertificates: true}
+`
+	want := strings.Replace(in, "    sslOptions: {insecureTrustAllCertificates: true}\n", "    options:\n      ssl: {insecureTrustAllCertificates: true}\n", 1)
+	out := apply(t, in)
+	if out != want {
+		t.Errorf("unexpected output:\n%s\nwant:\n%s", out, want)
+	}
+	if second := apply(t, out); second != out {
+		t.Errorf("second migration changed output:\n%s", second)
+	}
+}
+
+func TestApply_MigrateHTTPTriggerSSLOptions_AliasedSSL(t *testing.T) {
+	in := `id: test
+namespace: test
+variables:
+  strict: &strict
+    insecureTrustAllCertificates: false
+  none: &none null
+triggers:
+  - id: kept
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: *strict
+    sslOptions:
+      insecureTrustAllCertificates: true
+  - id: fallback
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: *none
+    sslOptions:
+      insecureTrustAllCertificates: true
+`
+	want := `id: test
+namespace: test
+variables:
+  strict: &strict
+    insecureTrustAllCertificates: false
+  none: &none null
+triggers:
+  - id: kept
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: *strict
+  - id: fallback
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl:
+        insecureTrustAllCertificates: true
+`
+	out, warnings := applyWithWarnings(t, in)
+	if out != want {
+		t.Errorf("unexpected output:\n%s\nwant:\n%s", out, want)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if _, _, err := Apply([]byte(out)); err != nil {
+		t.Errorf("output does not parse again: %v", err)
+	}
+}
+
+// A shared or merged `options` cannot be edited for one trigger without
+// changing, or overriding, the TLS settings other triggers inherit from it.
+func TestApply_MigrateHTTPTriggerSSLOptions_SharedOptionsWarns(t *testing.T) {
+	cases := map[string]string{
+		"anchored options": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options: &opts
+      followRedirects: false
+    sslOptions:
+      insecureTrustAllCertificates: true
+  - id: second
+    type: io.kestra.plugin.core.http.Trigger
+    options: *opts
+`,
+		"aliased options": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options: &opts
+      followRedirects: false
+  - id: second
+    type: io.kestra.plugin.core.http.Trigger
+    options: *opts
+    sslOptions:
+      insecureTrustAllCertificates: true
+`,
+		"merged options": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options: &opts
+      ssl:
+        insecureTrustAllCertificates: false
+  - id: second
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      <<: *opts
+      followRedirects: true
+    sslOptions:
+      insecureTrustAllCertificates: true
+`,
+		"anchored trigger": `
+  - &base
+    id: first
+    type: io.kestra.plugin.core.http.Trigger
+    sslOptions:
+      insecureTrustAllCertificates: true
+  - <<: *base
+    id: second
+    options:
+      followRedirects: true
+`,
+		"anchored null ssl": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: &ssl null
+    sslOptions:
+      insecureTrustAllCertificates: true
+  - id: second
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: *ssl
+`,
+		"anchored sslOptions": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl:
+        insecureTrustAllCertificates: false
+    sslOptions: &ssl
+      insecureTrustAllCertificates: true
+  - id: second
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: *ssl
+`,
+		"anchored sslOptions aliased in options": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    sslOptions: &ssl
+      insecureTrustAllCertificates: true
+    options:
+      ssl: null
+      fallback: *ssl
+`,
+		"anchored null sslOptions": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    sslOptions: &none null
+  - id: second
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      ssl: *none
+`,
+		"aliased sslOptions": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options:
+      timeout: PT1M
+    headers: &ssl
+      insecureTrustAllCertificates: true
+    sslOptions: *ssl
+`,
+		"anchor inside sslOptions": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    sslOptions:
+      insecureTrustAllCertificates: &trust true
+    description: *trust
+`,
+		"anchored sslOptions key": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    &key sslOptions:
+      insecureTrustAllCertificates: true
+    description: *key
+`,
+		"templated options": `
+  - id: first
+    type: io.kestra.plugin.core.http.Trigger
+    options: "{{ vars.options }}"
+    sslOptions:
+      insecureTrustAllCertificates: true
+`,
+	}
+	for name, triggers := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := "id: test\nnamespace: test\ntriggers:" + triggers
+			for _, opts := range [][]Option{nil, {StayV1Compatible()}} {
+				out, warnings, err := Apply([]byte(in), opts...)
+				if err != nil {
+					t.Fatalf("Apply error: %v", err)
+				}
+				if string(out) != in {
+					t.Errorf("flow changed:\n%s", out)
+				}
+				var ssl []Warning
+				for _, w := range warnings {
+					if w.Code == CodeHTTPTriggerSSL {
+						ssl = append(ssl, w)
+					}
+				}
+				if len(ssl) != 1 || !ssl[0].V2Incompatible {
+					t.Errorf("want one v2-incompatible %s warning, got %+v", CodeHTTPTriggerSSL, ssl)
+				}
+			}
+		})
+	}
+}
+
 // ── Rule: removeDeprecatedHTTPOptions ─────────────────────────────────────────
 
 func TestApply_RemoveConnectionPoolIdleTimeout(t *testing.T) {

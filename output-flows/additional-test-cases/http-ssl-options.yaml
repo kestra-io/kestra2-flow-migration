@@ -1,0 +1,38 @@
+# kestra2-flow-migration#58: HTTP trigger sslOptions migrate to options.ssl, preserving modern SSL options
+id: http_ssl_options
+namespace: company.team
+
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ trigger.body }}"
+
+triggers:
+  - id: legacy_ssl
+    type: io.kestra.plugin.core.http.Trigger
+    uri: https://example.com
+    options:
+      ssl:
+        insecureTrustAllCertificates: true
+
+  - id: merged_ssl
+    type: io.kestra.plugin.core.http.Trigger
+    uri: https://example.com
+    options:
+      followRedirects: false
+      ssl:
+        insecureTrustAllCertificates: true
+
+  - id: modern_ssl
+    type: io.kestra.plugin.core.http.Trigger
+    uri: https://example.com
+    options:
+      ssl:
+        insecureTrustAllCertificates: false
+
+  - id: legacy_alias
+    type: io.kestra.plugin.fs.http.Trigger
+    uri: https://example.com
+    options:
+      ssl:
+        insecureTrustAllCertificates: true
