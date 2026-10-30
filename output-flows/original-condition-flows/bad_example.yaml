@@ -15,7 +15,7 @@ triggers:
     dependsOn:
       - flowId: cleanup
         namespace: company.system
-        when: "{{ trigger.namespace startsWith 'company.product' }}"
+        when: "{{ flow.namespace | startsWith('company.product') }}"
         states:
           - FAILED
           - WARNING
