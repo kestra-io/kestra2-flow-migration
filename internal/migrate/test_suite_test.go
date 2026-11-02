@@ -78,7 +78,7 @@ testCases:
             value: mocked-x
 `
 	corpus := ExtractFlowCorpus([][]byte{[]byte(flowYAML), []byte(suiteYAML)})
-	if !corpus["foreach_flow"]["inner"] {
+	if !corpus[corpusKey("qa.migr", "foreach_flow")]["inner"] {
 		t.Fatalf("expected inner to be recorded in corpus for foreach_flow")
 	}
 
@@ -264,5 +264,167 @@ testCases:
 	}
 	if !strings.Contains(suiteWarnings[0].Message, "mock_one_iteration") || !strings.Contains(suiteWarnings[0].Message, "inner") {
 		t.Errorf("expected warning to mention mock_one_iteration and inner, got: %s", suiteWarnings[0].Message)
+	}
+}
+
+const prefixFlowYAML = `
+id: prefix_flow
+namespace: qa.migr
+tasks:
+  - id: each
+    type: io.kestra.plugin.core.flow.ForEach
+    values: ["x"]
+    tasks:
+      - id: inner
+        type: io.kestra.plugin.core.debug.Return
+        format: a
+  - id: inner_two
+    type: io.kestra.plugin.core.debug.Return
+    format: b
+  - id: ret
+    type: io.kestra.plugin.core.debug.Return
+    format: c
+`
+
+func TestTestSuite_TaskIDPrefixIsNotAMatch(t *testing.T) {
+	suiteYAML := `
+id: s
+namespace: qa.migr
+flowId: prefix_flow
+testCases:
+  - id: t
+    type: io.kestra.core.tests.flow.UnitTest
+    assertions:
+      - value: "{{ outputs.inner_two.value }}"
+        equalTo: b
+`
+	corpus := ExtractFlowCorpus([][]byte{[]byte(prefixFlowYAML)})
+	_, warnings, err := Apply([]byte(suiteYAML), WithCorpus(corpus))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("outputs.inner_two must not match ForEach task 'inner', got: %v", warnings)
+	}
+}
+
+func TestTestSuite_KeyedAccessOnNonForEachTask_NoWarningWithCorpus(t *testing.T) {
+	suiteYAML := `
+id: s
+namespace: qa.migr
+flowId: prefix_flow
+testCases:
+  - id: t
+    type: io.kestra.core.tests.flow.UnitTest
+    assertions:
+      - value: "{{ outputs.ret['value'] }}"
+        equalTo: c
+`
+	corpus := ExtractFlowCorpus([][]byte{[]byte(prefixFlowYAML)})
+	_, warnings, err := Apply([]byte(suiteYAML), WithCorpus(corpus))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("key access on a task outside any ForEach must not warn, got: %v", warnings)
+	}
+}
+
+func TestTestSuite_KeyedAccessWithoutCorpus_IsHedged(t *testing.T) {
+	suiteYAML := `
+id: s
+namespace: qa.migr
+flowId: prefix_flow
+testCases:
+  - id: t
+    type: io.kestra.core.tests.flow.UnitTest
+    assertions:
+      - value: "{{ outputs.ret['value'] }}"
+        equalTo: c
+`
+	_, warnings, err := Apply([]byte(suiteYAML))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Message, "if task 'ret' runs inside a ForEach") {
+		t.Errorf("expected one hedged warning for 'ret', got: %v", warnings)
+	}
+}
+
+func TestTestSuite_CorpusIsKeyedByNamespace(t *testing.T) {
+	other := strings.Replace(prefixFlowYAML, "namespace: qa.migr", "namespace: other.ns", 1)
+	other = strings.Replace(other, "io.kestra.plugin.core.flow.ForEach", "io.kestra.plugin.core.flow.Sequential", 1)
+	corpus := ExtractFlowCorpus([][]byte{[]byte(prefixFlowYAML), []byte(other)})
+	if !corpus[corpusKey("qa.migr", "prefix_flow")]["inner"] {
+		t.Fatalf("qa.migr/prefix_flow should record 'inner' inside a ForEach")
+	}
+	if corpus[corpusKey("other.ns", "prefix_flow")]["inner"] {
+		t.Fatalf("other.ns/prefix_flow has no ForEach and must not inherit qa.migr's tasks")
+	}
+
+	suiteYAML := `
+id: s
+namespace: other.ns
+flowId: prefix_flow
+testCases:
+  - id: t
+    type: io.kestra.core.tests.flow.UnitTest
+    fixtures:
+      tasks:
+        - id: inner
+          outputs: {value: m}
+`
+	_, warnings, err := Apply([]byte(suiteYAML), WithCorpus(corpus))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("suite in other.ns must be checked against other.ns's flow, got: %v", warnings)
+	}
+}
+
+func TestTestSuite_WarningOrderIsDeterministic(t *testing.T) {
+	flowYAML := `
+id: f
+namespace: qa.migr
+tasks:
+  - id: each
+    type: io.kestra.plugin.core.flow.ForEach
+    values: ["x"]
+    tasks:
+      - id: a
+        type: io.kestra.plugin.core.debug.Return
+        format: a
+      - id: b
+        type: io.kestra.plugin.core.debug.Return
+        format: b
+      - id: c
+        type: io.kestra.plugin.core.debug.Return
+        format: c
+`
+	suiteYAML := `
+id: s
+namespace: qa.migr
+flowId: f
+testCases:
+  - id: t
+    type: io.kestra.core.tests.flow.UnitTest
+    assertions:
+      - value: "{{ outputs.c.value }} {{ outputs.a.value }} {{ outputs.b.value }}"
+        equalTo: x
+`
+	corpus := ExtractFlowCorpus([][]byte{[]byte(flowYAML)})
+	for i := 0; i < 20; i++ {
+		_, warnings, err := Apply([]byte(suiteYAML), WithCorpus(corpus))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got []string
+		for _, w := range warnings {
+			got = append(got, w.Subject)
+		}
+		if strings.Join(got, ",") != "c,a,b" {
+			t.Fatalf("warnings must follow the expression order c,a,b, got %v", got)
+		}
 	}
 }

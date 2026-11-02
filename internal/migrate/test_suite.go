@@ -8,32 +8,29 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FlowCorpus maps flowId to a set of task IDs that are defined inside a ForEach
-// (ForEach, ForEachItem, EachSequential, EachParallel) in that flow.
+// FlowCorpus records, for every flow processed in the same run, the IDs of the
+// tasks declared inside a ForEach / EachSequential / EachParallel. It is keyed
+// by "namespace/flowId" so same-named flows in different namespaces stay
+// apart. A flow with no ForEach is still present, with an empty set: that lets
+// a test suite targeting it be checked precisely instead of heuristically.
 type FlowCorpus map[string]map[string]bool
 
-var forEachTypes = map[string]bool{
-	"io.kestra.plugin.core.flow.ForEach":        true,
-	"io.kestra.plugin.core.flow.ForEachItem":    true,
-	"io.kestra.plugin.core.flow.EachSequential": true,
-	"io.kestra.plugin.core.flow.EachParallel":   true,
-	"io.kestra.core.tasks.flows.EachSequential": true,
-	"io.kestra.core.tasks.flows.EachParallel":   true,
-	"io.kestra.core.tasks.flows.ForEachItem":    true,
+func corpusKey(namespace, flowID string) string {
+	return namespace + "/" + flowID
 }
 
+// isForEachType reports whether typ is a flow-iteration task whose child tasks
+// run once per value (removed in v2 in favor of Loop). ForEachItem is left
+// out on purpose: it runs a subflow and declares no inline tasks.
 func isForEachType(typ string) bool {
-	if forEachTypes[typ] {
-		return true
-	}
 	return strings.HasSuffix(typ, ".ForEach") ||
-		strings.HasSuffix(typ, ".ForEachItem") ||
 		strings.HasSuffix(typ, ".EachSequential") ||
 		strings.HasSuffix(typ, ".EachParallel")
 }
 
-// ExtractFlowCorpus inspects a collection of YAML file contents and builds a
-// mapping from flowId to the set of task IDs declared inside any ForEach task.
+// ExtractFlowCorpus inspects a collection of YAML file contents and builds the
+// FlowCorpus for the flow definitions among them. Test suites and unparsable
+// files are skipped.
 func ExtractFlowCorpus(contents [][]byte) FlowCorpus {
 	corpus := make(FlowCorpus)
 	for _, raw := range contents {
@@ -42,28 +39,18 @@ func ExtractFlowCorpus(contents [][]byte) FlowCorpus {
 			continue
 		}
 		root := docRoot(&doc)
-		if root == nil || root.Kind != yaml.MappingNode {
-			continue
-		}
-		// If it has flowId and testCases, it is a test suite, not a flow definition.
-		if stringValue(root, "flowId") != "" && mappingValue(root, "testCases") != nil {
+		if root == nil || root.Kind != yaml.MappingNode || isTestSuite(&doc) {
 			continue
 		}
 		flowID := stringValue(root, "id")
 		if flowID == "" {
 			continue
 		}
-
-		innerTasks := make(map[string]bool)
-		findForEachInnerTasks(root, innerTasks)
-		if len(innerTasks) > 0 {
-			if corpus[flowID] == nil {
-				corpus[flowID] = make(map[string]bool)
-			}
-			for tid := range innerTasks {
-				corpus[flowID][tid] = true
-			}
+		key := corpusKey(stringValue(root, "namespace"), flowID)
+		if corpus[key] == nil {
+			corpus[key] = make(map[string]bool)
 		}
+		findForEachInnerTasks(root, corpus[key])
 	}
 	return corpus
 }
@@ -72,13 +59,10 @@ func findForEachInnerTasks(node *yaml.Node, innerTasks map[string]bool) {
 	if node == nil {
 		return
 	}
-	if node.Kind == yaml.MappingNode {
-		typ := stringValue(node, "type")
-		if isForEachType(typ) {
-			collectTaskIDs(mappingValue(node, "tasks"), innerTasks)
-			collectTaskIDs(mappingValue(node, "errors"), innerTasks)
-			return
-		}
+	if node.Kind == yaml.MappingNode && isForEachType(stringValue(node, "type")) {
+		collectTaskIDs(mappingValue(node, "tasks"), innerTasks)
+		collectTaskIDs(mappingValue(node, "errors"), innerTasks)
+		return
 	}
 	for _, child := range node.Content {
 		findForEachInnerTasks(child, innerTasks)
@@ -109,34 +93,43 @@ func isTestSuite(doc *yaml.Node) bool {
 	return stringValue(root, "flowId") != "" && mappingValue(root, "testCases") != nil
 }
 
-var reKeyedOutput = regexp.MustCompile(`outputs\.([a-zA-Z0-9_-]+)\[['"]([^'"]+)['"]\]`)
+// reOutputRef matches an outputs.<taskId> reference, optionally followed by a
+// literal key access (outputs.<taskId>['x']). The task ID is captured whole,
+// so `inner` never matches a reference to `inner_two`.
+var reOutputRef = regexp.MustCompile(`\boutputs\.([A-Za-z0-9_-]+)(\[\s*['"][^'"]*['"]\s*\])?`)
 
 // detectTestSuiteWarnings detects test fixtures and assertions that rely on
-// ForEach semantics which broke with the rewrite to Loop in v2.
+// ForEach semantics, which break once the flow is rewritten to Loop in v2.
+//
+// When the suite's flow is in the corpus, only tasks actually declared inside
+// a ForEach are reported. Otherwise it falls back to heuristics (a fixture
+// `value`, or a key access on a task's outputs) and the message says the
+// finding depends on the task running inside a ForEach.
 func detectTestSuiteWarnings(doc *yaml.Node, corpus FlowCorpus) []Warning {
-	root := docRoot(doc)
-	if root == nil || root.Kind != yaml.MappingNode {
+	if !isTestSuite(doc) {
 		return nil
 	}
-	flowID := stringValue(root, "flowId")
+	root := docRoot(doc)
 	testCasesNode := mappingValue(root, "testCases")
-	if flowID == "" || testCasesNode == nil || testCasesNode.Kind != yaml.SequenceNode {
+	if testCasesNode.Kind != yaml.SequenceNode {
 		return nil
 	}
 
-	var innerTasks map[string]bool
-	if corpus != nil {
-		innerTasks = corpus[flowID]
-	}
+	innerTasks, known := corpus[corpusKey(stringValue(root, "namespace"), stringValue(root, "flowId"))]
 
 	var warnings []Warning
 	seen := make(map[string]bool)
-
-	addWarning := func(w Warning) {
-		if !seen[w.Message] {
-			seen[w.Message] = true
-			warnings = append(warnings, w)
+	add := func(subject, message string) {
+		if seen[message] {
+			return
 		}
+		seen[message] = true
+		warnings = append(warnings, Warning{
+			Message: message,
+			DocURL:  docForEachLoop,
+			Code:    CodeTestSuiteForEach,
+			Subject: subject,
+		})
 	}
 
 	for _, tcNode := range testCasesNode.Content {
@@ -148,81 +141,48 @@ func detectTestSuiteWarnings(doc *yaml.Node, corpus FlowCorpus) []Warning {
 			tcID = "(unnamed)"
 		}
 
-		// 1. Check fixtures
-		fixturesNode := mappingValue(tcNode, "fixtures")
-		if fixturesNode != nil && fixturesNode.Kind == yaml.MappingNode {
-			tasksNode := mappingValue(fixturesNode, "tasks")
-			if tasksNode != nil && tasksNode.Kind == yaml.SequenceNode {
-				for _, fixNode := range tasksNode.Content {
-					if fixNode.Kind != yaml.MappingNode {
+		// 1. Fixtures
+		if fixtures := mappingValue(tcNode, "fixtures"); fixtures != nil && fixtures.Kind == yaml.MappingNode {
+			if tasks := mappingValue(fixtures, "tasks"); tasks != nil && tasks.Kind == yaml.SequenceNode {
+				for _, fix := range tasks.Content {
+					if fix.Kind != yaml.MappingNode {
 						continue
 					}
-					taskID := stringValue(fixNode, "id")
-					valNode := mappingValue(fixNode, "value")
-					hasValue := valNode != nil && valNode.Value != ""
-					isInner := innerTasks != nil && innerTasks[taskID]
-
-					if hasValue {
-						addWarning(Warning{
-							Message: fmt.Sprintf("test case '%s' fixture on task '%s' uses 'value' (%s): fixtures on tasks inside a ForEach do not apply to Loop iterations in v2; the real task will run", tcID, taskID, valNode.Value),
-							DocURL:  docForEachLoop,
-							Code:    CodeTestSuiteForEach,
-							Subject: taskID,
-						})
-					} else if isInner {
-						addWarning(Warning{
-							Message: fmt.Sprintf("test case '%s' fixture targets task '%s' inside a ForEach: fixtures on tasks inside a ForEach do not apply to Loop iterations in v2; the real task will run", tcID, taskID),
-							DocURL:  docForEachLoop,
-							Code:    CodeTestSuiteForEach,
-							Subject: taskID,
-						})
+					taskID := stringValue(fix, "id")
+					value := ""
+					if v := mappingValue(fix, "value"); v != nil {
+						value = v.Value
+					}
+					const consequence = "fixtures on tasks inside a ForEach do not apply to Loop iterations in v2; the real task will run"
+					switch {
+					case known && innerTasks[taskID] && value != "":
+						add(taskID, fmt.Sprintf("test case '%s' fixture targets task '%s' inside a ForEach and uses 'value' (%s): %s", tcID, taskID, value, consequence))
+					case known && innerTasks[taskID]:
+						add(taskID, fmt.Sprintf("test case '%s' fixture targets task '%s' inside a ForEach: %s", tcID, taskID, consequence))
+					case !known && value != "":
+						add(taskID, fmt.Sprintf("test case '%s' fixture on task '%s' uses 'value' (%s), so the task likely runs inside a ForEach (its flow was not part of this run): %s", tcID, taskID, value, consequence))
 					}
 				}
 			}
 		}
 
-		// 2. Check assertions
-		assertionsNode := mappingValue(tcNode, "assertions")
-		if assertionsNode != nil && assertionsNode.Kind == yaml.SequenceNode {
-			for _, assertNode := range assertionsNode.Content {
+		// 2. Assertions
+		if assertions := mappingValue(tcNode, "assertions"); assertions != nil && assertions.Kind == yaml.SequenceNode {
+			for _, assertNode := range assertions.Content {
 				if assertNode.Kind != yaml.MappingNode {
 					continue
 				}
-				var exprs []string
-				walkScalarStrings(assertNode, func(s string) {
-					exprs = append(exprs, s)
-				})
-
-				for _, expr := range exprs {
-					matches := reKeyedOutput.FindAllStringSubmatch(expr, -1)
-					keyedTasks := make(map[string]bool)
-					for _, m := range matches {
-						taskName := m[1]
-						keyedTasks[taskName] = true
-						addWarning(Warning{
-							Message: fmt.Sprintf("test case '%s' assertion reads '%s': in v2 Loop outputs are not keyed by iteration value and must be accessed via loopOutputs()", tcID, m[0]),
-							DocURL:  docForEachLoop,
-							Code:    CodeTestSuiteForEach,
-							Subject: taskName,
-						})
-					}
-
-					if innerTasks != nil {
-						for t := range innerTasks {
-							if keyedTasks[t] {
-								continue
-							}
-							if strings.Contains(expr, "outputs."+t) {
-								addWarning(Warning{
-									Message: fmt.Sprintf("test case '%s' assertion reads output of task '%s' inside a ForEach: in v2 Loop outputs are not exposed on outputs.<taskId> and must be accessed via loopOutputs()", tcID, t),
-									DocURL:  docForEachLoop,
-									Code:    CodeTestSuiteForEach,
-									Subject: t,
-								})
-							}
+				walkScalarStrings(assertNode, func(expr string) {
+					for _, m := range reOutputRef.FindAllStringSubmatch(expr, -1) {
+						ref, taskID, keyed := m[0], m[1], m[2] != ""
+						switch {
+						case known && innerTasks[taskID]:
+							add(taskID, fmt.Sprintf("test case '%s' assertion reads output of task '%s' inside a ForEach ('%s'): in v2 Loop outputs are not exposed on outputs.<taskId> and must be accessed via loopOutputs()", tcID, taskID, ref))
+						case !known && keyed:
+							add(taskID, fmt.Sprintf("test case '%s' assertion reads '%s': if task '%s' runs inside a ForEach (its flow was not part of this run), v2 Loop outputs are not keyed by iteration value and must be accessed via loopOutputs()", tcID, ref, taskID))
 						}
 					}
-				}
+				})
 			}
 		}
 	}
