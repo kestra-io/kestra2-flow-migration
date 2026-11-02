@@ -67,7 +67,11 @@ as comments.
 
 Use --summary to end the run with warnings grouped by family, so a one-off
 finding stays visible next to the bulk ones instead of being buried under
-them. Without it every warning carries its own docs link, as before.`,
+them. Without it every warning carries its own docs link, as before.
+
+Unit test suites are checked against the flows migrated in the same run, so
+pass a suite together with its flow for precise ForEach warnings; a suite on
+its own only gets heuristic ones.`,
 		Args:          cobra.MinimumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
