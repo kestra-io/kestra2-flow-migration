@@ -38,6 +38,11 @@ jobs:
     uses: kestra-io/actions/.github/workflows/security-scan.yml@main
     with:
       metadata: ${{ github.event.inputs.metadata }}
+      # Migration test fixtures: v1 example flows and their expected v2 output, with dummy
+      # credentials (JDBC URLs, passwords) and blueprint pod specs that are not deployed.
+      exclude-path: |
+        input-flows/**
+        output-flows/**
       components: |
         backend=**
       java-sbom-path: ''

@@ -9,8 +9,8 @@ permissions:
 
 jobs:
   tests:
+    # tests.yml reads no secret: nothing to pass on.
     uses: ./.github/workflows/tests.yml
-    secrets: inherit
 
   tag:
     needs: tests
@@ -27,7 +27,7 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "20"
 
@@ -37,7 +37,7 @@ jobs:
       # Tags pushed with the default GITHUB_TOKEN do not trigger other
       # workflows (GitHub recursion guard), so the Release workflow would
       # never run. Push the tag with a GitHub App token instead.
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         id: app-token
         with:
           client-id: ${{ secrets.GH_BOT_APP_ID }}
