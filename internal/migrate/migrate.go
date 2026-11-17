@@ -497,21 +497,31 @@ func renameInputNameToID(doc *yaml.Node) error {
 // Flow output type BOOLEAN/ENUM removed)
 //
 // The server rejects a BOOLEAN under `onResume` just as loudly as at the root
-// ("Validation error: Invalid type: BOOLEAN"), hence inputDefinitions. Flow
-// outputs are typed with the same enum, so only the root `outputs:` list is
-// renamed too: a Subflow's `outputs` is a mapping of values, not definitions.
+// ("Validation error: Invalid type: BOOLEAN"), hence inputDefinitions. Only the
+// root `outputs:` list declares flow outputs: a Subflow's `outputs` is a mapping
+// of values, not definitions. Kestra 2.1 gives flow outputs their own type list
+// without the input-only types, so an ENUM, SELECT or EMAIL output becomes STRING
+// and a MULTISELECT output becomes ARRAY, which v1.3 and 2.0 parse the same way.
 func renameInputAndOutputTypes(doc *yaml.Node) error {
-	rename := func(item *yaml.Node) {
+	inputDefinitions(doc, func(item *yaml.Node) {
 		switch stringValue(item, "type") {
 		case "BOOLEAN":
 			setStringValue(item, "type", "BOOL")
 		case "ENUM":
 			setStringValue(item, "type", "SELECT")
 		}
-	}
-	inputDefinitions(doc, rename)
+	})
 	if root := docRoot(doc); root != nil && root.Kind == yaml.MappingNode {
-		forEachMappingItem(mappingValue(root, "outputs"), rename)
+		forEachMappingItem(mappingValue(root, "outputs"), func(item *yaml.Node) {
+			switch stringValue(item, "type") {
+			case "BOOLEAN":
+				setStringValue(item, "type", "BOOL")
+			case "ENUM", "SELECT", "EMAIL":
+				setStringValue(item, "type", "STRING")
+			case "MULTISELECT":
+				setStringValue(item, "type", "ARRAY")
+			}
+		})
 	}
 	return nil
 }
