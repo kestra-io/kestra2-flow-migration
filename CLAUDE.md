@@ -143,7 +143,7 @@ Rules are applied in order via the `rules` slice. Each rule is a `func(*yaml.Nod
 | Rule | What it does |
 |------|-------------|
 | `renameInputNameToID` | Inputs: `name` → `id` |
-| `renameInputAndOutputTypes` | Inputs and root-level flow outputs: `BOOLEAN` → `BOOL`, `ENUM` → `SELECT` |
+| `renameInputAndOutputTypes` | Inputs: `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`. Root-level flow outputs: `BOOLEAN` → `BOOL`, `ENUM`/`SELECT`/`EMAIL` → `STRING`, `MULTISELECT` → `ARRAY` |
 | `renameMaxAttemptToMaxAttempts` | Retry: `maxAttempt` → `maxAttempts` in retry policies (flow, tasks, `pluginDefaults`); user data is left alone |
 | `renamePauseDelayToPauseDuration` | Pause task: `delay` → `pauseDuration` |
 | `normalizeFetchType` | `fetchType: STORE/FETCH` → `store: true` / `fetch: true` (specific plugins) |
@@ -265,7 +265,7 @@ Idempotent by construction: a disabled flow has no live incompatible construct l
 - **Type renames:** `io.kestra.core.*` → `io.kestra.plugin.core.*` (conditions, triggers, runners, serdes, storage tasks)
 - **Removed features:** Templates → Subflow, Listeners → Flow trigger, `LocalFiles`/`outputDir` → `inputFiles`/`outputFiles`, `runner` → `taskRunner`, State Store → KV Store
 - **Input changes:** `name` → `id`, `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`
-- **Flow output changes:** root `outputs:` types `BOOLEAN` → `BOOL`, `ENUM` → `SELECT`
+- **Flow output changes:** root `outputs:` types `BOOLEAN` → `BOOL`, `ENUM`/`SELECT`/`EMAIL` → `STRING`, `MULTISELECT` → `ARRAY`
 - **Property renames:** `scheduleConditions` → `conditions`, `maxAttempt` → `maxAttempts`, `taskDefaults` → `pluginDefaults`
 - **Property removals:** `Subflow.outputs`, `Schedule.backfills`, `PurgeKV.expiredOnly`, `AbstractTrigger.minLogLevel`
 - **EE-only changes:** documented in `migration-documentation/flows-changes.md` under the EE section

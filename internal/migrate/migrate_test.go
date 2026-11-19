@@ -288,7 +288,39 @@ outputs:
     type: STRING
     value: kestra
 `
-	want := strings.NewReplacer("type: BOOLEAN", "type: BOOL", "type: ENUM", "type: SELECT").Replace(in)
+	want := strings.NewReplacer("type: BOOLEAN", "type: BOOL", "type: ENUM", "type: STRING").Replace(in)
+	if out := apply(t, in); out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
+	}
+}
+
+// Kestra 2.1 refuses input-only types on flow outputs; v1.3 and 2.0 parse SELECT and EMAIL
+// outputs like STRING and MULTISELECT like ARRAY, so the replacement holds on every version.
+func TestApply_RenameOutputTypes_InputOnlyTypes(t *testing.T) {
+	in := `
+id: test-flow
+namespace: company.team
+inputs:
+  - id: region
+    type: SELECT
+    values: [eu, us]
+tasks:
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: hi
+outputs:
+  - id: region
+    type: SELECT
+    value: "{{ inputs.region }}"
+  - id: regions
+    type: MULTISELECT
+    value: "{{ [inputs.region] }}"
+  - id: contact
+    type: EMAIL
+    value: ops@example.com
+`
+	want := strings.Replace(in, "    type: SELECT\n    value:", "    type: STRING\n    value:", 1)
+	want = strings.NewReplacer("type: MULTISELECT", "type: ARRAY", "type: EMAIL", "type: STRING").Replace(want)
 	if out := apply(t, in); out != want {
 		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
@@ -4635,7 +4667,7 @@ tasks:
   type: io.kestra.plugin.core.log.Log
   message: hi
 outputs:
-  - type: SELECT
+  - type: STRING
     id: color
     value: red
 `,
